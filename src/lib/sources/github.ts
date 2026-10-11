@@ -174,6 +174,23 @@ export function profileMatchesDomain(profile: Pick<GhProfile, "blog" | "email">,
   return hostMatchesDomain(emailDomain, domain);
 }
 
+/** Brand label of a host: "engineering.shopify.com" → "shopify", "shopify.engineering" → "shopify". */
+export function brandLabel(host: string | null) {
+  if (!host) return null;
+  const parts = host.replace(/^www\./, "").split(".");
+  if (parts.length < 2) return null;
+  // Second-to-last label, or the one before a two-part public suffix like co.uk / com.au.
+  const twoPartSuffix = parts.length >= 3 && /^(co|com|org|net|ac|gov)$/.test(parts[parts.length - 2]);
+  return parts[parts.length - (twoPartSuffix ? 3 : 2)] ?? null;
+}
+
+/** Org website on a different TLD of the same brand (shopify.engineering, airbnb.tech). */
+export function profileMatchesBrand(profile: Pick<GhProfile, "blog">, domain: string | null) {
+  const a = brandLabel(hostOf(profile.blog));
+  const b = brandLabel(domain);
+  return Boolean(a && b && a.length >= 4 && a === b);
+}
+
 export async function identifyGithubOrg(
   gh: GitHubClient,
   company: { name: string; domain: string | null; github_org: string | null },
@@ -211,11 +228,20 @@ export async function identifyGithubOrg(
   // Prefer the one whose name matches the company, then the one with the most public repos.
   const target = normalizeCompanyName(company.name);
   const nameMatch = (p: GhProfile) => normalizeCompanyName(p.name ?? "") === target || normalizeCompanyName(p.login) === target;
-  const verified = unique
-    .filter((p) => profileMatchesDomain(p, company.domain))
-    .sort((a, b) => Number(nameMatch(b)) - Number(nameMatch(a)) || b.public_repos - a.public_repos)[0];
+  // Verified = website on the company's domain, or (name matches AND website is the same brand
+  // on another TLD, e.g. Shopify → shopify.engineering). Name alone or brand alone is not enough.
+  const verifiedBy = (p: GhProfile) =>
+    profileMatchesDomain(p, company.domain) ? "domain" : nameMatch(p) && profileMatchesBrand(p, company.domain) ? "brand" : null;
+  // Rank: same-brand + name match beats a side account on the exact domain (Shopify vs
+  // Shopify-Partners), but an exact-domain org with a matching name beats everything.
+  const rank = (p: GhProfile) => (verifiedBy(p) === "domain" ? 1 : 0) + (nameMatch(p) ? 2 : 0);
+  const verified = unique.filter((p) => verifiedBy(p)).sort((a, b) => rank(b) - rank(a) || b.public_repos - a.public_repos)[0];
   if (verified) {
-    return toIdent(verified, "verified_domain", `Matched: the GitHub organization's website (${verified.blog || verified.email}) is on ${company.domain}.`, candidates);
+    const how =
+      verifiedBy(verified) === "domain"
+        ? `the GitHub organization's website (${verified.blog || verified.email}) is on ${company.domain}`
+        : `the organization is named "${verified.name ?? verified.login}" and its website (${verified.blog}) is the same brand as ${company.domain}`;
+    return toIdent(verified, "verified_domain", `Matched: ${how}.`, candidates);
   }
 
   const nameMatches = unique.filter(nameMatch).sort((a, b) => b.public_repos - a.public_repos);

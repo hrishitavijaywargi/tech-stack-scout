@@ -1,7 +1,7 @@
 import "server-only";
 import { env } from "@/lib/env";
 import { db, check } from "@/lib/supabase/server";
-import { RateLimitError } from "@/lib/http";
+import { HttpError, RateLimitError } from "@/lib/http";
 import { getCompany, getSettings, latestSnapshot, supabaseHttpCache } from "@/lib/data";
 import { GitHubClient, collectGithub, emptyActivity, identifyGithubOrg } from "@/lib/sources/github";
 import { collectJobPostings } from "@/lib/sources/jobs";
@@ -95,6 +95,11 @@ export async function runResearch(job: ResearchJob, deadline = Number.POSITIVE_I
     }
   } catch (err) {
     if (err instanceof RateLimitError) throw err;
+    // GitHub is the main evidence source: a transient failure (network, 5xx) fails the job so the
+    // queue retries it, instead of saving a weak report that looks like "no GitHub presence".
+    if (err instanceof HttpError && (err.status === 0 || err.status >= 500)) {
+      throw new Error(`GitHub temporarily unavailable: ${err.message}`);
+    }
     ident = { ...ident, note: `GitHub lookup failed: ${(err as Error).message}` };
     statuses.push({ source: "GitHub", status: "error", detail: ident.note });
   }

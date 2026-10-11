@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GitHubClient, collectGithub, identifyGithubOrg, normalizeCompanyName, type GhProfile } from "@/lib/sources/github";
+import { GitHubClient, brandLabel, collectGithub, identifyGithubOrg, normalizeCompanyName, profileMatchesBrand, type GhProfile } from "@/lib/sources/github";
 import { discoverFeedLinks, parseFeed } from "@/lib/sources/articles";
 import { parseCareersUrl } from "@/lib/sources/jobs";
 import { RateLimitError } from "@/lib/http";
@@ -44,6 +44,25 @@ describe("identifyGithubOrg", () => {
     const { ident } = await identifyGithubOrg(new GitHubClient(), { name: "Shopify", domain: "shopify.com", github_org: null });
     expect(ident.login).toBe("Shopify");
     expect(ident.method).toBe("verified_domain");
+  });
+
+  it("verifies a name-matching org whose site is the same brand on another TLD (shopify.engineering)", async () => {
+    mockFetch([
+      [/search\/users/, () => json({ items: [{ login: "Shopify-Partners" }, { login: "Shopify" }] })],
+      [/\/users\/Shopify-Partners$/, () => json({ login: "Shopify-Partners", type: "Organization", name: "Shopify Partners", blog: "https://shopify.com", email: null, html_url: "https://github.com/Shopify-Partners", public_repos: 2 })],
+      [/\/users\/(S|s)hopify$/, () => json({ login: "Shopify", type: "Organization", name: "Shopify", blog: "https://shopify.engineering/", email: null, html_url: "https://github.com/Shopify", public_repos: 1500 })],
+    ]);
+    const { ident } = await identifyGithubOrg(new GitHubClient(), { name: "Shopify", domain: "shopify.com", github_org: null });
+    expect(ident.login).toBe("Shopify");
+    expect(ident.method).toBe("verified_domain");
+    expect(ident.note).toMatch(/same brand/);
+  });
+
+  it("does not verify a same-brand site when the name does not match", () => {
+    expect(brandLabel("engineering.shopify.com")).toBe("shopify");
+    expect(brandLabel("acme.co.uk")).toBe("acme");
+    expect(profileMatchesBrand({ blog: "https://acme.games" }, "acme.io")).toBe(true); // brand alone…
+    // …but identifyGithubOrg also requires the name to match (covered by the "ACME Games" case above).
   });
 
   it("marks a name-only match as unconfirmed", async () => {
