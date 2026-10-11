@@ -1,0 +1,41 @@
+{
+  "name": "tech-stack-scout",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-powered engineering intelligence for enterprise sales (MESA C4 - Problem Statement 5)",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "smoke:github": "tsx scripts/smoke-github.ts",
+    "check:bundle": "node scripts/check-client-bundle.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.3",
+    "fast-xml-parser": "^5.11.2",
+    "lucide-react": "^1.55.0",
+    "next": "^15.5.27",
+    "papaparse": "^5.7.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "autoprefixer": "^10.6.1",
+    "postcss": "^8.5.29",
+    "tailwindcss": "^3.4.19",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "engines": {
+    "node": ">=20.9"
+  }
+}

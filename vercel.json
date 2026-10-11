@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "regions": ["bom1"],
+  "functions": {
+    "src/app/api/**/*": { "maxDuration": 300 }
+  },
+  "crons": [{ "path": "/api/cron/refresh", "schedule": "0 2 * * 1" }]
+}
