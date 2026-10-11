@@ -216,14 +216,21 @@ function sentences(text: string) {
 
 /** Technologies mentioned in text that are not in the evidence (ignoring negated sentences). */
 export function unsupportedTechMentions(text: string, stack: StackItem[], productName?: string) {
-  const known = new Set(stack.map((s) => s.technology.toLowerCase()));
+  const known = stack.map((s) => s.technology.toLowerCase());
+  const escape = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // "Ruby" is supported by "Ruby on Rails", "Kafka" by "Kafka (event streaming)", etc.
+  const isKnown = (name: string) => {
+    const n = name.toLowerCase();
+    const word = new RegExp(`(^|[^a-z0-9])${escape(n)}([^a-z0-9]|$)`);
+    return known.some((k) => k === n || word.test(k) || new RegExp(`(^|[^a-z0-9])${escape(k)}([^a-z0-9]|$)`).test(n));
+  };
   const out = new Set<string>();
   for (const s of sentences(text)) {
     if (NEGATION.test(s)) continue;
     // Sentences about the seller's own product may name its features (e.g. "preview environments on Kubernetes").
     if (productName && s.toLowerCase().includes(productName.toLowerCase())) continue;
     for (const m of detectInText(s)) {
-      if (!known.has(m.def.name.toLowerCase())) out.add(m.def.name);
+      if (!isKnown(m.def.name)) out.add(m.def.name);
     }
   }
   return [...out];

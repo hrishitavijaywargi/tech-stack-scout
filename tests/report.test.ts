@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFacts, buildPrompt, insufficientEvidenceReport, stripCitations, validateAiReport, type ReportInput } from "@/lib/ai/report";
+import { buildFacts, buildPrompt, insufficientEvidenceReport, stripCitations, unsupportedTechMentions, validateAiReport, type ReportInput } from "@/lib/ai/report";
 import { buildStack } from "@/lib/research/analysis";
 import { emptyActivity } from "@/lib/sources/github";
 import type { EvidenceItem } from "@/lib/types";
@@ -85,6 +85,19 @@ describe("validateAiReport", () => {
 
   it("validates the JSON shape", () => {
     expect(validateAiReport({ summary_paragraph_1: P }, facts, stack).ok).toBe(false);
+  });
+});
+
+describe("unsupportedTechMentions", () => {
+  it("accepts a language named inside a known framework (Ruby ⊂ Ruby on Rails)", () => {
+    const rails = buildStack(
+      [{ ...ev("Ruby on Rails", "framework") }, { ...ev("Kafka (event streaming)", "architecture") }],
+      [],
+      new Map(),
+      "2026-10-11T00:00:00Z",
+    );
+    expect(unsupportedTechMentions("Their Ruby on Rails apps publish to Kafka topics.", rails)).toEqual([]);
+    expect(unsupportedTechMentions("They also run Terraform.", rails)).toEqual(["Terraform"]);
   });
 });
 
