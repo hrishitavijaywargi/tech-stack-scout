@@ -5,5 +5,8 @@
   "functions": {
     "src/app/api/**/*": { "maxDuration": 300 }
   },
-  "crons": [{ "path": "/api/cron/refresh", "schedule": "0 2 * * 1" }]
+  "crons": [
+    { "path": "/api/cron/refresh?source=vercel-weekly", "schedule": "0 6 * * 1" },
+    { "path": "/api/cron/refresh?source=vercel-daily", "schedule": "0 7 * * *" }
+  ]
 }

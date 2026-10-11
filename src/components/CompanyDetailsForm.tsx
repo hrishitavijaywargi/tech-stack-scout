@@ -8,7 +8,10 @@ import { api, useToast } from "@/components/Toast";
 import { notifyResearchStarted } from "@/components/LiveProgress";
 import type { Company } from "@/lib/types";
 
-/** Edit identification inputs (website, GitHub org, careers, blog) and optionally re-research. */
+export const inputClass =
+  "mt-1 block w-full rounded-lg border border-slate-300 bg-surface px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20";
+
+/** Edit a company's sources (domain, GitHub org, job board, blog feed, notes) and optionally re-research. */
 export function CompanyDetailsForm({ company }: { company: Company }) {
   const router = useRouter();
   const toast = useToast();
@@ -20,11 +23,11 @@ export function CompanyDetailsForm({ company }: { company: Company }) {
     setError(null);
     try {
       await api(`/api/companies/${company.id}`, { method: "PATCH", json: patch });
-      if (refresh) {
-        await api("/api/research", { method: "POST", json: { companyIds: [company.id] } });
+      if (refresh && company.is_active) {
+        await api(`/api/companies/${company.id}/refresh`, { method: "POST" });
         notifyResearchStarted();
       }
-      toast({ kind: "success", title: "Company details saved", description: refresh ? "Research has been queued with the new details." : undefined });
+      toast({ kind: "success", title: "Company sources saved", description: refresh ? "Research has been queued with the new sources." : undefined });
       router.refresh();
     } catch (err) {
       setError((err as Error).message);
@@ -37,15 +40,24 @@ export function CompanyDetailsForm({ company }: { company: Company }) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
     const val = (k: string) => String(f.get(k) ?? "").trim() || null;
-    save({ website: val("website"), github: val("github"), careers_url: val("careers_url"), blog_url: val("blog_url") }, f.get("refresh") === "on");
+    save(
+      {
+        website: val("website") ?? "",
+        github: val("github"),
+        job_board_provider: val("job_board_provider"),
+        job_board_slug: val("job_board_slug"),
+        blog_rss_url: val("blog_rss_url"),
+        notes: val("notes"),
+      },
+      f.get("refresh") === "on",
+    );
   }
 
-  const detectedUnconfirmed = !company.github_org && company.detected_github_org && company.detected_github_org_method === "name_match_unconfirmed";
-  const input = "mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20";
+  const unconfirmed = !company.github_org && company.detected_github_org && company.detected_github_org_method === "name_match_unconfirmed";
 
   return (
     <form onSubmit={onSubmit} className="space-y-4 px-5 py-4">
-      {detectedUnconfirmed && (
+      {unconfirmed && (
         <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
           <span>
             Is <strong>github.com/{company.detected_github_org}</strong> really {company.name}&apos;s organization?
@@ -57,29 +69,44 @@ export function CompanyDetailsForm({ company }: { company: Company }) {
       )}
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block text-sm font-medium text-slate-700">
-          Website
-          <input name="website" defaultValue={company.domain ?? ""} placeholder="acme.com" className={input} />
+          Domain *
+          <input name="website" required defaultValue={company.domain} placeholder="acme.com" className={inputClass} />
         </label>
         <label className="block text-sm font-medium text-slate-700">
           GitHub organization
-          <input name="github" defaultValue={company.github_org ?? ""} placeholder={company.detected_github_org ?? "acme"} className={input} />
+          <input name="github" defaultValue={company.github_org ?? ""} placeholder={company.detected_github_org ?? "acme"} className={inputClass} />
         </label>
+        <div className="grid grid-cols-5 gap-2">
+          <label className="col-span-2 block text-sm font-medium text-slate-700">
+            Job board
+            <select name="job_board_provider" defaultValue={company.job_board_provider ?? ""} className={inputClass}>
+              <option value="">Auto-detect</option>
+              <option value="greenhouse">Greenhouse</option>
+              <option value="lever">Lever</option>
+              <option value="ashby">Ashby</option>
+            </select>
+          </label>
+          <label className="col-span-3 block text-sm font-medium text-slate-700">
+            Board slug
+            <input name="job_board_slug" defaultValue={company.job_board_slug ?? ""} placeholder="acme" className={inputClass} />
+          </label>
+        </div>
         <label className="block text-sm font-medium text-slate-700">
-          Careers page
-          <input name="careers_url" defaultValue={company.careers_url ?? ""} placeholder="https://jobs.lever.co/acme" className={input} />
+          Engineering blog RSS
+          <input name="blog_rss_url" defaultValue={company.blog_rss_url ?? ""} placeholder="Auto-discovered when empty" className={inputClass} />
         </label>
-        <label className="block text-sm font-medium text-slate-700">
-          Engineering blog
-          <input name="blog_url" defaultValue={company.blog_url ?? ""} placeholder="https://acme.com/engineering" className={input} />
+        <label className="block text-sm font-medium text-slate-700 sm:col-span-2">
+          Notes
+          <textarea name="notes" defaultValue={company.notes ?? ""} rows={2} maxLength={2000} className={inputClass} />
         </label>
       </div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" name="refresh" defaultChecked className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
-          Re-run research after saving
+          <input type="checkbox" name="refresh" defaultChecked={company.is_active} disabled={!company.is_active} className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+          Refresh research after saving
         </label>
         <Button type="submit" variant="primary" loading={busy}>
-          Save details
+          Save sources
         </Button>
       </div>
       {error && (

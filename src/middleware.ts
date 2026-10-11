@@ -1,23 +1,24 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { SESSION_COOKIE, safeEqual, sessionToken } from "@/lib/auth";
 
-/** Optional HTTP Basic Auth for the whole app (set BASIC_AUTH_USER + BASIC_AUTH_PASSWORD). */
-export function middleware(req: NextRequest) {
-  const user = process.env.BASIC_AUTH_USER;
-  const pass = process.env.BASIC_AUTH_PASSWORD;
-  if (!user || !pass) return NextResponse.next();
-  // The scheduler authenticates with CRON_SECRET instead.
-  if (req.nextUrl.pathname.startsWith("/api/cron/")) return NextResponse.next();
+/**
+ * Password gate: when APP_PASSWORD is set, every page and API route needs the session cookie.
+ * The scheduler (/api/cron/*) authenticates with CRON_SECRET instead.
+ */
+export async function middleware(req: NextRequest) {
+  const password = process.env.APP_PASSWORD?.trim();
+  if (!password) return NextResponse.next();
+  const { pathname, search } = req.nextUrl;
+  if (pathname === "/login" || pathname.startsWith("/api/auth/") || pathname.startsWith("/api/cron/")) return NextResponse.next();
 
-  const header = req.headers.get("authorization");
-  if (header?.startsWith("Basic ")) {
-    const decoded = atob(header.slice(6));
-    const i = decoded.indexOf(":");
-    if (decoded.slice(0, i) === user && decoded.slice(i + 1) === pass) return NextResponse.next();
-  }
-  return new NextResponse("Authentication required", {
-    status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="Tech Stack Scout"' },
-  });
+  const cookie = req.cookies.get(SESSION_COOKIE)?.value;
+  if (cookie && safeEqual(cookie, await sessionToken(password))) return NextResponse.next();
+
+  if (pathname.startsWith("/api/")) return NextResponse.json({ error: "Sign in required" }, { status: 401 });
+  const url = req.nextUrl.clone();
+  url.pathname = "/login";
+  url.search = `?next=${encodeURIComponent(pathname + search)}`;
+  return NextResponse.redirect(url);
 }
 
 export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg).*)"] };

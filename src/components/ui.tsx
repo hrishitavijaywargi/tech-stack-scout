@@ -23,7 +23,7 @@ export function PageHeader({ title, description, actions }: { title: string; des
 
 export function Card({ className, children, ...rest }: ComponentProps<"section">) {
   return (
-    <section className={cx("rounded-xl border border-slate-200 bg-white shadow-sm", className)} {...rest}>
+    <section className={cx("rounded-xl border border-slate-200 bg-surface shadow-sm", className)} {...rest}>
       {children}
     </section>
   );
@@ -48,9 +48,9 @@ export function CardHeader({ title, description, actions, id }: { title: ReactNo
 type Variant = "primary" | "secondary" | "ghost" | "danger";
 const VARIANTS: Record<Variant, string> = {
   primary: "bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm disabled:bg-indigo-300",
-  secondary: "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 shadow-sm disabled:text-slate-400",
+  secondary: "border border-slate-300 bg-surface text-slate-700 hover:bg-slate-50 shadow-sm disabled:text-slate-400",
   ghost: "text-slate-600 hover:bg-slate-100 hover:text-slate-900 disabled:text-slate-300",
-  danger: "border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:text-red-300",
+  danger: "border border-red-200 bg-surface text-red-700 hover:bg-red-50 disabled:text-red-300",
 };
 const SIZES = { sm: "h-8 px-2.5 text-xs gap-1.5", md: "h-9 px-3.5 text-sm gap-2" };
 

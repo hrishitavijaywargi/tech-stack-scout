@@ -3,20 +3,26 @@ import { z } from "zod";
 
 /** Pure (client + server) validation and normalisation of company input and CSV files. */
 
+export type JobBoardProvider = "greenhouse" | "lever" | "ashby";
+
 export interface CompanyInput {
   name: string;
-  domain: string | null;
+  domain: string;
   github_org: string | null;
-  careers_url: string | null;
-  blog_url: string | null;
+  job_board_provider: JobBoardProvider | null;
+  job_board_slug: string | null;
+  blog_rss_url: string | null;
 }
 
 export const rawCompanySchema = z.object({
   name: z.string().trim().min(1, "Company name is required").max(200, "Company name is too long"),
   website: z.string().trim().max(300).nullish(),
   github: z.string().trim().max(300).nullish(),
+  /** A Greenhouse/Lever/Ashby board URL — parsed into provider + slug. */
   careers_url: z.string().trim().max(500).nullish(),
-  blog_url: z.string().trim().max(500).nullish(),
+  job_board_provider: z.string().trim().max(20).nullish(),
+  job_board_slug: z.string().trim().max(100).nullish(),
+  blog_rss_url: z.string().trim().max(500).nullish(),
 });
 export type RawCompany = z.infer<typeof rawCompanySchema>;
 
@@ -62,6 +68,29 @@ export function normalizeUrl(input: string | null | undefined, label: string): s
   }
 }
 
+const PROVIDERS: JobBoardProvider[] = ["greenhouse", "lever", "ashby"];
+const SLUG_RE = /^[A-Za-z0-9._%-]{1,100}$/;
+
+/** Job board from an explicit provider + slug, or from a Greenhouse/Lever/Ashby careers URL. */
+export function parseJobBoard(provider: string | null | undefined, slug: string | null | undefined, careersUrl: string | null | undefined): { provider: JobBoardProvider; slug: string } | null {
+  const p = provider?.trim().toLowerCase();
+  const sl = slug?.trim();
+  if (p || sl) {
+    if (!p || !PROVIDERS.includes(p as JobBoardProvider)) throw new Error(`Job board provider must be one of ${PROVIDERS.join(", ")}`);
+    if (!sl || !SLUG_RE.test(sl)) throw new Error("Job board slug is missing or invalid");
+    return { provider: p as JobBoardProvider, slug: sl };
+  }
+  const u = careersUrl?.trim();
+  if (!u) return null;
+  const gh = /(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io\/(?:embed\/job_board\?for=)?([\w-]+)/i.exec(u);
+  if (gh) return { provider: "greenhouse", slug: gh[1] };
+  const lever = /jobs\.(?:eu\.)?lever\.co\/([\w.-]+)/i.exec(u);
+  if (lever) return { provider: "lever", slug: lever[1] };
+  const ashby = /jobs\.ashbyhq\.com\/([\w.%-]+)/i.exec(u);
+  if (ashby) return { provider: "ashby", slug: decodeURIComponent(ashby[1]) };
+  throw new Error("Careers URL must be a Greenhouse, Lever or Ashby job board (or set provider + slug)");
+}
+
 export function normalizeCompany(raw: unknown): { ok: true; value: CompanyInput } | { ok: false; errors: string[] } {
   const parsed = rawCompanySchema.safeParse(raw);
   if (!parsed.success) return { ok: false, errors: parsed.error.issues.map((i) => i.message) };
@@ -82,12 +111,16 @@ export function normalizeCompany(raw: unknown): { ok: true; value: CompanyInput 
     github = website;
     website = null;
   }
+  const domain = attempt(() => normalizeDomain(website));
+  if (!domain && !errors.length) errors.push("Website / domain is required");
+  const board = attempt(() => parseJobBoard(r.job_board_provider, r.job_board_slug, r.careers_url));
   const value: CompanyInput = {
     name: r.name.replace(/\s+/g, " "),
-    domain: attempt(() => normalizeDomain(website)),
+    domain: domain ?? "",
     github_org: attempt(() => parseGithubOrg(github)),
-    careers_url: attempt(() => normalizeUrl(r.careers_url, "careers URL")),
-    blog_url: attempt(() => normalizeUrl(r.blog_url, "blog URL")),
+    job_board_provider: board?.provider ?? null,
+    job_board_slug: board?.slug ?? null,
+    blog_rss_url: attempt(() => normalizeUrl(r.blog_rss_url, "blog RSS URL")),
   };
   return errors.length ? { ok: false, errors } : { ok: true, value };
 }
@@ -100,7 +133,7 @@ export function identityKeys(c: Pick<CompanyInput, "name" | "domain" | "github_o
   return keys;
 }
 
-export function findDuplicate(c: CompanyInput, existing: Pick<CompanyInput, "name" | "domain" | "github_org">[]) {
+export function findDuplicate(c: Pick<CompanyInput, "name" | "domain" | "github_org">, existing: Pick<CompanyInput, "name" | "domain" | "github_org">[]) {
   const mine = new Set(identityKeys(c));
   for (const e of existing) {
     const hit = identityKeys(e).find((k) => mine.has(k));
@@ -120,8 +153,10 @@ const HEADER_ALIASES: Record<keyof RawCompany, string[]> = {
   name: ["name", "company", "company name", "company_name", "account", "account name"],
   website: ["website", "domain", "url", "site", "company website", "homepage"],
   github: ["github", "github org", "github_org", "github url", "github_url", "github organization"],
-  careers_url: ["careers", "careers url", "careers_url", "jobs", "jobs url", "job board"],
-  blog_url: ["blog", "blog url", "blog_url", "engineering blog"],
+  careers_url: ["careers", "careers url", "careers_url", "jobs", "jobs url", "job board url"],
+  job_board_provider: ["job_board_provider", "job board provider", "ats", "provider"],
+  job_board_slug: ["job_board_slug", "job board slug", "slug", "board slug"],
+  blog_rss_url: ["blog", "blog url", "blog_url", "engineering blog", "rss", "blog_rss_url", "rss url", "feed"],
 };
 
 export interface CsvRow {
@@ -148,37 +183,25 @@ export function parseCompanyCsv(text: string): CsvParseResult {
   for (const e of res.errors.slice(0, 5)) fileErrors.push(`Row ${(e.row ?? 0) + 2}: ${e.message}`);
 
   const headers = res.meta.fields ?? [];
-  const col = Object.fromEntries(
-    (Object.keys(HEADER_ALIASES) as (keyof RawCompany)[]).map((k) => [k, headers.find((h) => HEADER_ALIASES[k].includes(h))]),
-  ) as Record<keyof RawCompany, string | undefined>;
-  if (!col.name) {
-    // Headerless single-column file: treat every line as a company name.
-    if (headers.length === 1 && !/name|company/.test(headers[0])) {
-      return parseCompanyCsv(`name\n${text}`);
-    }
-    return { rows: [], valid: [], fileErrors: [`The CSV needs a "name" (or "company") column. Found: ${headers.join(", ") || "no columns"}.`] };
-  }
+  const col = Object.fromEntries((Object.keys(HEADER_ALIASES) as (keyof RawCompany)[]).map((k) => [k, headers.find((h) => HEADER_ALIASES[k].includes(h))])) as Record<
+    keyof RawCompany,
+    string | undefined
+  >;
+  if (!col.name) return { rows: [], valid: [], fileErrors: [`The CSV needs a "name" (or "company") column. Found: ${headers.join(", ") || "no columns"}.`] };
+  if (!col.website) fileErrors.push('The CSV needs a "website" (or "domain") column — every company needs a domain.');
   if (res.data.length > MAX_CSV_ROWS) fileErrors.push(`Only the first ${MAX_CSV_ROWS} rows are imported (file has ${res.data.length}).`);
 
   const seen: CompanyInput[] = [];
   const rows: CsvRow[] = res.data.slice(0, MAX_CSV_ROWS).map((r, i) => {
-    const raw = {
-      name: r[col.name!] ?? "",
-      website: col.website ? r[col.website] : undefined,
-      github: col.github ? r[col.github] : undefined,
-      careers_url: col.careers_url ? r[col.careers_url] : undefined,
-      blog_url: col.blog_url ? r[col.blog_url] : undefined,
-    };
+    const raw = Object.fromEntries((Object.keys(col) as (keyof RawCompany)[]).filter((k) => col[k]).map((k) => [k, r[col[k]!] ?? ""])) as Record<string, string>;
     const n = normalizeCompany(raw);
     const line = i + 2;
-    const rawOut = Object.fromEntries(Object.entries(raw).filter(([, v]) => v !== undefined)) as Record<string, string>;
-    if (!n.ok) return { line, raw: rawOut, status: "invalid", value: null, errors: n.errors };
+    if (!n.ok) return { line, raw, status: "invalid", value: null, errors: n.errors };
     const dup = findDuplicate(n.value, seen);
-    if (dup) return { line, raw: rawOut, status: "duplicate_in_file", value: n.value, errors: [`Same ${dup.matchedOn} as "${dup.name}" earlier in the file`] };
+    if (dup) return { line, raw, status: "duplicate_in_file", value: n.value, errors: [`Same ${dup.matchedOn} as "${dup.name}" earlier in the file`] };
     seen.push(n.value);
-    return { line, raw: rawOut, status: "valid", value: n.value, errors: [] };
+    return { line, raw, status: "valid", value: n.value, errors: [] };
   });
-
   return { rows, fileErrors, valid: seen };
 }
 
@@ -186,8 +209,6 @@ export function parseCompanyCsv(text: string): CsvParseResult {
 
 export function toCsv(rows: Record<string, string | number | null | undefined>[]) {
   // Neutralise spreadsheet formula injection in exported cells.
-  const safe = rows.map((r) =>
-    Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "string" && /^[=+\-@\t\r]/.test(v) ? `'${v}` : v ?? ""])),
-  );
+  const safe = rows.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === "string" && /^[=+\-@\t\r]/.test(v) ? `'${v}` : (v ?? "")])));
   return Papa.unparse(safe, { quotes: true });
 }

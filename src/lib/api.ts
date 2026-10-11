@@ -32,22 +32,22 @@ export function handler<A extends unknown[]>(fn: (...args: A) => Promise<Respons
  * Process the research queue after the response is sent (Vercel waitUntil). If the time
  * budget runs out with work left, chain another invocation through the cron endpoint.
  */
-export function scheduleProcessing(origin: string) {
+export function scheduleProcessing(origin: string, trigger: "cron" | "manual" = "manual", source = "ui") {
   after(async () => {
     try {
-      const r = await processQueue();
+      const r = await processQueue({ trigger, source });
       console.log(`[queue] ${JSON.stringify(r)}`);
-      if (r.stoppedReason === "time budget reached") await chainWorker(origin);
+      if (r.stoppedReason === "time budget reached") await chainWorker(origin, trigger);
     } catch (err) {
       console.error("[queue] processing failed:", (err as Error).message);
     }
   });
 }
 
-async function chainWorker(origin: string) {
+async function chainWorker(origin: string, trigger: "cron" | "manual") {
   const secret = env().CRON_SECRET;
   if (!secret) return; // The scheduled job will pick the rest up.
-  await fetchWithTimeout(`${origin}/api/cron/refresh?mode=drain`, { headers: { Authorization: `Bearer ${secret}` }, timeoutMs: 5000 }).catch(() => undefined);
+  await fetchWithTimeout(`${origin}/api/cron/refresh?mode=drain&source=chain-${trigger}`, { headers: { Authorization: `Bearer ${secret}` }, timeoutMs: 5000 }).catch(() => undefined);
 }
 
 export function originOf(req: Request) {

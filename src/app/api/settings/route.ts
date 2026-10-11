@@ -6,8 +6,6 @@ export const dynamic = "force-dynamic";
 
 const schema = z
   .object({
-    product_name: z.string().trim().min(2).max(80),
-    product_description: z.string().trim().min(40, "Describe the product in at least a sentence or two").max(2000),
     refresh_interval_days: z.number().int().min(1).max(60),
     max_repos: z.number().int().min(3).max(25),
     include_job_boards: z.boolean(),

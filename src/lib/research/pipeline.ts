@@ -2,37 +2,20 @@ import "server-only";
 import { env } from "@/lib/env";
 import { db, check } from "@/lib/supabase/server";
 import { HttpError, RateLimitError } from "@/lib/http";
-import { getCompany, getSettings, latestSnapshot, supabaseHttpCache } from "@/lib/data";
-import { GitHubClient, collectGithub, emptyActivity, identifyGithubOrg } from "@/lib/sources/github";
-import { collectJobPostings } from "@/lib/sources/jobs";
-import { collectBlog, collectHackerNews, type Article } from "@/lib/sources/articles";
-import { buildSnapshot, buildStack, diffSnapshots, scoreConfidence, techKey } from "@/lib/research/analysis";
+import { getCompany, getProductProfile, getSettings, latestSnapshot, supabaseHttpCache } from "@/lib/data";
+import { timed } from "@/lib/collectors/common";
+import { GitHubClient, collectGithub, emptyActivity, identifyGithubOrg, type GithubCollection } from "@/lib/collectors/github";
+import { collectJobs, emptyHiring } from "@/lib/collectors/jobs";
+import { collectDns } from "@/lib/collectors/dns";
+import { collectCrtsh } from "@/lib/collectors/crtsh";
+import { collectHn } from "@/lib/collectors/hn";
+import { collectRss } from "@/lib/collectors/rss";
+import { collectWebResearch, emptyResearch } from "@/lib/collectors/webResearch";
+import { buildStack, diffSnapshots, scoreConfidence, techKey, type DiffInput } from "@/lib/research/analysis";
+import { activityScore, fitScore } from "@/lib/scoring";
 import { geminiJson } from "@/lib/ai/gemini";
-import {
-  SYSTEM_PROMPT,
-  buildFacts,
-  buildPrompt,
-  geminiResponseSchema,
-  insufficientEvidenceReport,
-  stripCitations,
-  toInterpretations,
-  toOutreach,
-  validateAiReport,
-  type ReportInput,
-} from "@/lib/ai/report";
-import {
-  CATEGORY_LABELS,
-  CATEGORY_ORDER,
-  type ActivityMetrics,
-  type EvidenceItem,
-  type GithubIdentification,
-  type Interpretation,
-  type LanguageShare,
-  type OutreachResult,
-  type ResearchJob,
-  type SourceRef,
-  type SourceStatus,
-} from "@/lib/types";
+import { SYSTEM_PROMPT, buildFacts, buildPrompt, geminiResponseSchema, insufficientEvidenceInsight, toInsight, validateAiReport, type InsightOutput, type ReportInput } from "@/lib/ai/report";
+import { CATEGORY_LABELS, CATEGORY_ORDER, SOURCE_LABELS, type DnsInfo, type EvidenceItem, type GithubIdentification, type ResearchJob, type SourceKey, type SourceRef, type SourceStatusEntry } from "@/lib/types";
 
 export class PermanentError extends Error {
   constructor(message: string) {
@@ -42,108 +25,114 @@ export class PermanentError extends Error {
 }
 
 const log = (jobId: string, msg: string) => console.log(`[research ${jobId.slice(0, 8)}] ${msg}`);
+const skipped = (message: string): SourceStatusEntry => ({ status: "skipped", message, duration_ms: 0 });
+
+/** GitHub is the main source: rate limits and transient failures fail the job (it is retried). */
+const githubMustRetry = (err: unknown) => err instanceof RateLimitError || (err instanceof HttpError && (err.status === 0 || err.status >= 500));
 
 /**
  * The single research pipeline used by manual, bulk and scheduled refreshes:
- * identify → collect (GitHub, job boards, blog feed, Hacker News) → store sources/findings →
- * aggregate stack → score confidence → Gemini report (validated) → report + snapshot + diff.
+ * collect (7 sources in parallel; a failing source never fails the company) → store sources +
+ * findings → aggregate stack with per-technology confidence → scores → Gemini insight
+ * (validated) → company_snapshots + company_insights rows → diff vs previous snapshot.
  */
-export async function runResearch(job: ResearchJob, deadline = Number.POSITIVE_INFINITY): Promise<{ reportId: string }> {
-  // A run that overshoots its deadline stops before writing anything, so a timed-out job
-  // can never save a late report after the queue has already marked it failed.
+export async function runResearch(job: ResearchJob, deadline = Number.POSITIVE_INFINITY): Promise<{ snapshotId: string }> {
+  // A run that overshoots its deadline stops before writing anything, so a timed-out job can
+  // never save a late snapshot after the queue has already marked it failed.
   const checkDeadline = (stage: string) => {
     if (Date.now() > deadline) throw new Error(`Research timed out (during ${stage})`);
   };
   const company = await getCompany(job.company_id);
   if (!company) throw new PermanentError("The company was removed from the watchlist.");
-  const settings = await getSettings();
+  const [settings, profile, prev] = await Promise.all([getSettings(), getProductProfile(), latestSnapshot(company.id)]);
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
+  const status: Partial<Record<SourceKey, SourceStatusEntry>> = {};
 
-  const statuses: SourceStatus[] = [];
-  const evidence: EvidenceItem[] = [];
-  const sources: SourceRef[] = [];
-  const limitations: string[] = [
-    "Public repositories, job postings and articles show only part of a company's technology stack; internal systems and private code are not visible.",
-  ];
-
-  // ---------------------------------------------------------------- 1. GitHub
+  // ---------------------------------------------------------------- 1. Collect (parallel)
   const gh = new GitHubClient({ token: env().GITHUB_TOKEN, cache: supabaseHttpCache });
-  let ident: GithubIdentification = { login: null, method: "none", profileUrl: null, displayName: null, blog: null, candidates: [], note: "" };
-  let languages: LanguageShare[] = [];
-  let activity: ActivityMetrics = emptyActivity();
-  try {
-    const found = await identifyGithubOrg(gh, company);
-    ident = found.ident;
-    if (found.profile) {
+  const knownLogin = company.github_org ?? company.detected_github_org;
+
+  const githubTask = timed<{ ident: GithubIdentification; col: GithubCollection | null }>(
+    async () => {
+      const found = await identifyGithubOrg(gh, company);
+      if (!found.profile) return { value: { ident: found.ident, col: null }, status: { status: "not_found" as const, message: found.ident.note } };
       const col = await collectGithub(gh, found.profile, { maxRepos: settings.max_repos, now });
-      evidence.push(...col.evidence);
-      sources.push(...col.sources);
-      languages = col.languages;
-      activity = col.activity;
-      limitations.push(...col.notes);
-      statuses.push({
-        source: "GitHub",
-        status: "ok",
-        items: col.activity.reposAnalyzed,
-        url: found.profile.html_url,
-        detail: `${found.profile.login}: ${col.activity.reposListed} public repositories listed, ${col.activity.reposAnalyzed} analyzed in depth (${gh.requests} API requests, ${gh.cacheHits} served from cache).`,
-      });
-    } else {
-      activity = emptyActivity("Not publicly found", ident.note);
-      statuses.push({ source: "GitHub", status: "not_found", detail: ident.note });
-    }
-  } catch (err) {
-    if (err instanceof RateLimitError) throw err;
-    // GitHub is the main evidence source: a transient failure (network, 5xx) fails the job so the
-    // queue retries it, instead of saving a weak report that looks like "no GitHub presence".
-    if (err instanceof HttpError && (err.status === 0 || err.status >= 500)) {
-      throw new Error(`GitHub temporarily unavailable: ${err.message}`);
-    }
-    ident = { ...ident, note: `GitHub lookup failed: ${(err as Error).message}` };
-    statuses.push({ source: "GitHub", status: "error", detail: ident.note });
-  }
-  if (!gh.authenticated) limitations.push("GitHub was queried without a token (60 requests/hour), so coverage may be reduced. Add GITHUB_TOKEN.");
+      return {
+        value: { ident: found.ident, col },
+        status: {
+          status: "ok" as const,
+          items: col.activity.repos_listed,
+          url: found.profile.html_url,
+          message: `${found.profile.login}: ${col.activity.repos_listed} public repositories (${gh.authenticated ? "GraphQL" : "REST"}), ${col.activity.repos_analyzed} scanned in depth; ${gh.requests} API calls, ${gh.cacheHits} cached.`,
+        },
+      };
+    },
+    { ident: { login: null, method: "none", profileUrl: null, displayName: null, blog: null, candidates: [], note: "GitHub lookup failed." } as GithubIdentification, col: null },
+    githubMustRetry,
+  );
+
+  const [github, jobs, dns, crt, hn, rss, web] = await Promise.all([
+    githubTask,
+    settings.include_job_boards ? timed(async () => { const r = await collectJobs(company, knownLogin); return { value: r, status: r.status }; }, null) : null,
+    timed(async () => { const r = await collectDns(company.domain); return { value: r, status: r.status }; }, null),
+    timed(async () => { const r = await collectCrtsh(company.domain); return { value: r, status: r.status }; }, null),
+    settings.include_hacker_news ? timed(async () => { const r = await collectHn(company, now); return { value: r, status: r.status }; }, null) : null,
+    settings.include_blogs ? timed(async () => { const r = await collectRss(company); return { value: r, status: r.status }; }, null) : null,
+    env().WEB_RESEARCH_ENABLED ? timed(async () => { const r = await collectWebResearch(company); return { value: r, status: r.status }; }, null) : null,
+  ]);
+  status.github = github.status;
+  status.jobs = jobs?.status ?? skipped("Disabled in Settings.");
+  status.dns = dns.status;
+  status.crtsh = crt.status;
+  status.hn = hn?.status ?? skipped("Disabled in Settings.");
+  status.rss = rss?.status ?? skipped("Disabled in Settings.");
+  status.web_research = web?.status ?? skipped("Disabled (WEB_RESEARCH_ENABLED=false).");
+
+  const ident = github.value.ident;
+  const gcol = github.value.col;
+  const activity = gcol?.activity ?? emptyActivity("Not publicly found", ident.note);
+  const hiring = { ...(jobs?.value?.hiring ?? emptyHiring()), previous_eng_open_roles: prev?.hiring?.provider ? prev.hiring.eng_open_roles : null };
+  const dnsInfo: DnsInfo = dns.value?.dns ?? { hosting: [], email_provider: null, saas_verifications: [], spf_includes: [], nameservers: [] };
+  const subdomains = crt.value?.subdomains ?? { count: 0, tooling: [] };
+  const hnStories = hn?.value?.stories ?? [];
+  const blogPosts = rss?.value?.posts ?? [];
+  const webResearch = web?.value?.research ?? emptyResearch();
+
+  const evidence: EvidenceItem[] = [
+    ...(gcol?.evidence ?? []),
+    ...(jobs?.value?.evidence ?? []),
+    ...(dns.value?.evidence ?? []),
+    ...(crt.value?.evidence ?? []),
+    ...(hn?.value?.evidence ?? []),
+    ...(rss?.value?.evidence ?? []),
+    ...(web?.value?.evidence ?? []),
+  ];
+  const sources: SourceRef[] = [
+    ...(gcol?.sources ?? []),
+    ...(jobs?.value?.sources ?? []),
+    ...(dns.value?.sources ?? []),
+    ...(crt.value?.sources ?? []),
+    ...(hn?.value?.sources ?? []),
+    ...(rss?.value?.sources ?? []),
+    ...(web?.value?.sources ?? []),
+  ];
+  log(job.id, `collected: ${Object.entries(status).map(([k, v]) => `${k}=${v.status}`).join(" ")}; ${evidence.length} evidence items`);
+
+  const limitations: string[] = [
+    "Public repositories, job postings, DNS records and articles show only part of a company's technology stack; private repositories and internal systems are not visible.",
+    ...(gcol?.notes ?? []),
+  ];
+  if (!gh.authenticated) limitations.push("GitHub was queried without a token (60 requests/hour), so coverage is reduced. Add GITHUB_TOKEN.");
   if (ident.method === "name_match_unconfirmed") limitations.push(ident.note);
-  log(job.id, `github: ${ident.method} ${ident.login ?? "-"}, ${evidence.length} evidence items`);
+  if (status.crtsh?.status === "error") limitations.push("Certificate Transparency (crt.sh) did not respond in time; subdomain tooling was not checked this run.");
 
-  // ---------------------------------------------------------------- 2. Job postings
-  let jobPostings: { title: string; url: string; publishedAt: string | null }[] = [];
-  if (settings.include_job_boards) {
-    const jobs = await collectJobPostings(company, ident.login);
-    statuses.push(jobs.status);
-    evidence.push(...jobs.evidence);
-    sources.push(...jobs.sources);
-    jobPostings = jobs.postings;
-  } else statuses.push({ source: "Job postings", status: "skipped", detail: "Disabled in Settings." });
+  // Save sources discovered automatically back onto the company row (only where empty).
+  const discovered: Record<string, string> = {};
+  if (jobs?.value?.discovered && !company.job_board_provider) Object.assign(discovered, { job_board_provider: jobs.value.discovered.provider, job_board_slug: jobs.value.discovered.slug });
+  if (rss?.value?.discovered && !company.blog_rss_url) discovered.blog_rss_url = rss.value.discovered;
 
-  // ---------------------------------------------------------------- 3. Articles
-  const articles: Article[] = [];
-  const domain = company.domain ?? null;
-  if (settings.include_blogs) {
-    const blog = await collectBlog({ domain, blog_url: company.blog_url }, { now });
-    statuses.push(blog.status);
-    evidence.push(...blog.evidence);
-    sources.push(...blog.sources);
-    articles.push(...blog.articles);
-  } else statuses.push({ source: "Engineering blog", status: "skipped", detail: "Disabled in Settings." });
-
-  if (settings.include_hacker_news) {
-    const hn = await collectHackerNews({ domain }, { now });
-    statuses.push(hn.status);
-    const known = new Set(sources.map((s) => s.url));
-    evidence.push(...hn.evidence.filter((e) => !known.has(e.source.url) || e.source.type === "hacker_news"));
-    sources.push(...hn.sources.filter((s) => !known.has(s.url)));
-    articles.push(...hn.articles.filter((a) => !articles.some((b) => b.url === a.url)));
-  } else statuses.push({ source: "Hacker News", status: "skipped", detail: "Disabled in Settings." });
-
-  statuses.push({
-    source: "Developer talks",
-    status: "not_collected",
-    detail: "No reliable public API for conference talks is configured, so talks are not collected.",
-  });
-
-  // ---------------------------------------------------------------- 4. Store sources + findings
+  // ---------------------------------------------------------------- 2. Store sources + findings
   checkDeadline("evidence collection");
   const uniqueSources = [...new Map(sources.map((s) => [s.url, s])).values()];
   const sourceIds = new Map<string, string>();
@@ -157,13 +146,9 @@ export async function runResearch(job: ResearchJob, deadline = Number.POSITIVE_I
       last_collected_at: nowIso,
       metadata: s.metadata ?? {},
     }));
-    const rows = check(await db().from("research_sources").upsert(chunk, { onConflict: "company_id,url" }).select("id, url"), "Saving sources") as {
-      id: string;
-      url: string;
-    }[];
+    const rows = check(await db().from("research_sources").upsert(chunk, { onConflict: "company_id,url" }).select("id, url"), "Saving sources") as { id: string; url: string }[];
     rows.forEach((r) => sourceIds.set(r.url, r.id));
   }
-
   const findingRows = new Map<string, Record<string, unknown>>();
   for (const e of evidence) {
     const sourceId = sourceIds.get(e.source.url);
@@ -186,7 +171,6 @@ export async function runResearch(job: ResearchJob, deadline = Number.POSITIVE_I
   for (let i = 0; i < findingList.length; i += 300) {
     check(await db().from("research_findings").upsert(findingList.slice(i, i + 300), { onConflict: "company_id,source_id,technology" }), "Saving findings");
   }
-
   const firstRows = check(await db().from("research_findings").select("technology, category, first_observed_at").eq("company_id", company.id), "Loading findings history") as {
     technology: string;
     category: string;
@@ -199,46 +183,53 @@ export async function runResearch(job: ResearchJob, deadline = Number.POSITIVE_I
     if (!cur || r.first_observed_at < cur) firstObserved.set(k, r.first_observed_at);
   }
 
-  // ---------------------------------------------------------------- 5. Aggregate + confidence
-  const stack = buildStack(evidence, languages, firstObserved, nowIso);
-  const confidence = scoreConfidence({ githubMethod: ident.method, reposAnalyzed: activity.reposAnalyzed, evidence, now });
+  // ---------------------------------------------------------------- 3. Stack, scores, confidence
+  const languages = gcol?.languages ?? [];
+  const recentLanguages = gcol?.recentLanguages ?? [];
+  const stack = buildStack(evidence, languages, firstObserved, nowIso, hiring);
+  const act = activityScore(activity, hiring);
+  const fit = fitScore(profile, stack, recentLanguages, languages, hiring);
+  const breakdown = { activity: act.components, fit: fit.components };
+  const confidence = scoreConfidence({ githubMethod: ident.method, reposAnalyzed: activity.repos_analyzed, evidence, now });
 
   const missing: string[] = [];
   for (const cat of CATEGORY_ORDER) if (!stack.some((s) => s.category === cat)) missing.push(`${CATEGORY_LABELS[cat]}: not publicly found`);
-  if (activity.reposListed === 0) missing.push("Recent engineering activity: not publicly found");
-  for (const s of statuses) if (s.status === "not_found" || s.status === "error") missing.push(`${s.source}: ${s.detail}`);
+  if (activity.repos_listed === 0) missing.push("Recent engineering activity: not publicly found");
+  for (const [k, s] of Object.entries(status)) if (s.status === "not_found" || s.status === "error") missing.push(`${SOURCE_LABELS[k as SourceKey]}: ${s.message}`);
 
-  // ---------------------------------------------------------------- 6. Gemini report
+  // ---------------------------------------------------------------- 4. Gemini insight
   const input: ReportInput = {
-    company: { name: company.name, domain },
-    product: { name: settings.product_name, description: settings.product_description },
+    company: { name: company.name, domain: company.domain },
+    product: profile,
     identification: ident,
     stack,
+    recentLanguages,
     activity,
-    jobPostings,
-    articles: articles.map((a) => ({ title: a.title, url: a.url, publishedAt: a.publishedAt })),
-    sourceStatuses: statuses,
+    hiring,
+    dns: dnsInfo,
+    subdomains,
+    blogPosts,
+    hnStories,
+    webResearch,
+    scores: { activity: act.score, fit: fit.score, breakdown },
+    trend: { previousActivityScore: prev?.activity_score ?? null, previousEngRoles: hiring.previous_eng_open_roles, previousCapturedAt: prev?.captured_at ?? null },
+    sourceSummary: Object.entries(status).map(([k, s]) => `${SOURCE_LABELS[k as SourceKey]}: ${s.status} — ${s.message}`),
     limitations,
   };
-
   const facts = buildFacts(input);
-  let paragraphs: string[];
-  let outreach: OutreachResult;
-  let interpretations: Interpretation[] = [];
+  let insight: InsightOutput;
   let aiModel: string | null = null;
   let aiAttempts: number | null = null;
   const usage = { promptTokens: 0, outputTokens: 0, thoughtsTokens: 0, totalTokens: 0 };
 
-  const hasEvidence = stack.length > 0 || activity.reposListed > 0 || jobPostings.length > 0 || articles.length > 0;
+  const hasEvidence = stack.length > 0 || activity.repos_listed > 0 || hiring.eng_open_roles > 0 || blogPosts.length > 0 || hnStories.length > 0;
   if (!hasEvidence) {
-    const fallback = insufficientEvidenceReport(input);
-    paragraphs = fallback.paragraphs;
-    outreach = fallback.outreach;
+    insight = insufficientEvidenceInsight(input);
   } else {
     let errors: string[] = [];
-    let accepted = null as ReturnType<typeof validateAiReport> | null;
+    let accepted: ReturnType<typeof validateAiReport> | null = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
-      checkDeadline("AI report");
+      checkDeadline("AI insight");
       aiAttempts = attempt;
       const res = await geminiJson({
         system: SYSTEM_PROMPT,
@@ -255,7 +246,7 @@ export async function runResearch(job: ResearchJob, deadline = Number.POSITIVE_I
         errors = ["The response was not valid JSON."];
         continue;
       }
-      const v = validateAiReport(json, facts, stack, settings.product_name);
+      const v = validateAiReport(json, facts, stack, profile.product_name);
       if (v.ok) {
         accepted = v;
         break;
@@ -263,72 +254,84 @@ export async function runResearch(job: ResearchJob, deadline = Number.POSITIVE_I
       errors = v.errors;
       log(job.id, `gemini attempt ${attempt} rejected: ${errors.join(" | ")}`);
     }
-    if (!accepted || !accepted.ok) throw new Error(`Gemini's report failed validation after 3 attempts: ${errors.slice(0, 3).join("; ")}`);
-    const r = accepted.report;
-    paragraphs = [stripCitations(r.summary_paragraph_1), stripCitations(r.summary_paragraph_2)];
-    outreach = toOutreach(r, ident.method === "name_match_unconfirmed");
-    interpretations = toInterpretations(r);
-    for (const l of r.limitations) if (!limitations.includes(l)) limitations.push(l);
+    if (!accepted || !accepted.ok) throw new Error(`Gemini's insight failed validation after 3 attempts: ${errors.slice(0, 3).join("; ")}`);
+    insight = toInsight(accepted.report, ident.method === "name_match_unconfirmed");
+    for (const l of accepted.report.limitations) if (!limitations.includes(l)) limitations.push(l);
   }
 
-  // ---------------------------------------------------------------- 7. Report + snapshot + diff
-  checkDeadline("saving the report");
-  const prev = await latestSnapshot(company.id);
-  const versionRow = check(
-    await db().from("research_reports").select("version").eq("company_id", company.id).order("version", { ascending: false }).limit(1).maybeSingle(),
-    "Loading report version",
-  ) as { version: number } | null;
-  const version = (versionRow?.version ?? 0) + 1;
+  // ---------------------------------------------------------------- 5. Snapshot + insight + diff
+  checkDeadline("saving the snapshot");
+  const version = (prev?.version ?? 0) + 1;
+  const diffOf = (s: { github_identification: GithubIdentification; infra_signals: typeof stack; recent_languages: typeof languages; languages: typeof languages; activity: typeof activity; hiring: typeof hiring }): DiffInput => ({
+    githubLogin: s.github_identification?.login ?? null,
+    stack: s.infra_signals ?? [],
+    languages: s.recent_languages?.length ? s.recent_languages : (s.languages ?? []),
+    activity: s.activity ?? emptyActivity(),
+    hiring: s.hiring ?? emptyHiring(),
+  });
+  const changes = prev
+    ? diffSnapshots(diffOf(prev), diffOf({ github_identification: ident, infra_signals: stack, recent_languages: recentLanguages, languages, activity, hiring }), nowIso)
+    : [];
 
-  const report = check(
+  const snapshot = check(
     await db()
-      .from("research_reports")
+      .from("company_snapshots")
       .insert({
         company_id: company.id,
         job_id: job.id,
+        run_id: job.run_id,
         version,
-        summary_paragraphs: paragraphs,
-        tech_stack: stack,
-        engineering_activity: activity,
-        outreach,
-        interpretations,
+        captured_at: nowIso,
+        languages,
+        recent_languages: recentLanguages,
+        infra_signals: stack,
+        activity,
+        hiring,
+        dns: dnsInfo,
+        subdomains,
+        hn_stories: hnStories,
+        blog_posts: blogPosts,
+        web_research: webResearch,
+        activity_score: act.score,
+        fit_score: fit.score,
+        score_breakdown: breakdown,
+        confidence,
+        source_status: status,
+        github_identification: ident,
         evidence_facts: facts.map(({ anchors: _a, ...f }) => f),
-        confidence_level: confidence.level,
-        confidence_score: confidence.score,
-        confidence_breakdown: confidence,
         limitations,
         missing_information: missing,
-        source_statuses: statuses,
         sources_analyzed: uniqueSources.length,
-        github_identification: ident,
-        ai_model: aiModel,
-        ai_attempts: aiAttempts,
-        ai_usage: aiModel ? usage : null,
+        changes,
+        previous_snapshot_id: prev?.id ?? null,
       })
       .select("id")
       .single(),
-    "Saving report",
+    "Saving snapshot",
   ) as { id: string };
 
-  const snapshot = buildSnapshot(stack, languages, activity, evidence, ident.login);
-  const changes = diffSnapshots(prev?.findings ?? null, snapshot, nowIso);
   check(
-    await db().from("research_snapshots").insert({
+    await db().from("company_insights").insert({
       company_id: company.id,
-      report_id: report.id,
-      report_version: version,
-      previous_snapshot_id: prev?.id ?? null,
-      snapshot_at: nowIso,
-      findings: snapshot,
-      changes,
+      snapshot_id: snapshot.id,
+      summary: insight.summary,
+      outreach_line: insight.outreachLine,
+      outreach_rationale: insight.outreachRationale,
+      talking_points: insight.talkingPoints,
+      outreach: insight.outreach,
+      interpretations: insight.interpretations,
+      model: aiModel,
+      ai_attempts: aiAttempts,
+      ai_usage: aiModel ? usage : null,
     }),
-    "Saving snapshot",
+    "Saving insight",
   );
 
   check(
     await db()
       .from("companies")
       .update({
+        ...discovered,
         research_status: "completed",
         last_researched_at: nowIso,
         next_refresh_at: new Date(now + settings.refresh_interval_days * 86_400_000).toISOString(),
@@ -340,6 +343,6 @@ export async function runResearch(job: ResearchJob, deadline = Number.POSITIVE_I
     "Updating company",
   );
 
-  log(job.id, `done: v${version}, ${stack.length} technologies, ${uniqueSources.length} sources, confidence ${confidence.level}`);
-  return { reportId: report.id };
+  log(job.id, `done: v${version}, ${stack.length} technologies, activity ${act.score}, fit ${fit.score}, ${uniqueSources.length} sources, confidence ${confidence.level}`);
+  return { snapshotId: snapshot.id };
 }
