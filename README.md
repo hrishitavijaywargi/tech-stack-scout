@@ -93,9 +93,9 @@ Very active orgs land at 80–100 (Stripe scores 94) and dormant ones at 0–20.
 
 **fit_score (0–100)** compares against the `product_profile`:
 
-- **Target languages ×40:** the share of *recently active* code (180 d; else all-time) in target languages, with full marks at ≥50%. With no public code, target languages named in job postings give up to 20 points.
+- **Target languages ×40:** the share of *recently active* code (180 d; else all-time) in target languages, with full marks at ≥60%. With no public code, target languages named in job postings give up to 20 points.
 - **Target clouds ×30:** the best detected target cloud scores 30 at high confidence, 24 at medium, 12 at low.
-- **Target signals ×30:** each detected target signal (Microservices, Kubernetes, Monorepo…) adds 1 at high confidence, 0.8 at medium, 0.4 at low. Full marks at 3.
+- **Target signals ×30:** each detected target signal (Microservices, Kubernetes, Monorepo…) adds 1 at high confidence, 0.8 at medium, 0.4 at low. Full marks at 5.
 
 **Confidence per technology:** **high** = found in 2+ independent source families (code, jobs, DNS, certificate logs, articles, web research). **medium** = one strong source (public code/config, or 3+ job postings). **low** = a weak signal only (one DNS record, a couple of job mentions, an article, a subdomain).
 
@@ -185,7 +185,7 @@ npx tsx scripts/verify-seed.ts             # checks every seed GitHub org + job 
 - **Rate limits.**
   - **GitHub:** 5,000 requests/h with a token, about 40–60 per company, with ETag caching. Code Search (10 requests/min) isn't used; recursive tree listings give the same file-level signals without that limit.
   - **Gemini free tier:** about 20 requests/day *per model*. With 2 calls per company, a full first refresh of 20+ companies can span two days. Jobs pause and resume automatically. Enable billing on the AI Studio project to remove this.
-- **crt.sh** is often slow or down. It has a 25 s timeout, and a failure only marks that source as *error*.
+- **crt.sh** is often slow or down. It gets 2 attempts with a 25 s timeout each, and a failure only marks that source as *error*.
 - **Job boards:** only Greenhouse, Lever and Ashby have public APIs. Workday, iCIMS and in-house careers sites aren't read.
 - **Blogs:** only RSS/Atom. Some sites block automated requests (reported as such).
 - **Web research** is supplemental and weak evidence. Citation links are Google grounding redirect URLs.

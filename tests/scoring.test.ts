@@ -53,8 +53,8 @@ describe("fit score", () => {
       { name: "Python", bytes: 40, pct: 40, repos: 2, color: null },
     ];
     const r = fitScore(profile, stack, recent, recent, emptyHiring());
-    expect(r.components.map((c) => c.points)).toEqual([40, 30, 16]); // Go ≥50% · AWS high · K8s medium + Terraform medium
-    expect(r.score).toBe(86);
+    expect(r.components.map((c) => c.points)).toEqual([40, 30, 10]); // Go 60% · AWS high · K8s medium + Terraform medium (1.6 of 5)
+    expect(r.score).toBe(80);
   });
 
   it("is low when nothing overlaps", () => {

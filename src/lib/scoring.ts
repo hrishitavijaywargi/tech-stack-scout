@@ -35,10 +35,10 @@ const CONF_WEIGHT: Record<Confidence, number> = { high: 1, medium: 0.8, low: 0.4
 /**
  * fit_score (0–100) — overlap with the product profile:
  *   Languages ×40: share of recently-active code (180 d; else all-time) in target languages,
- *                  full marks at ≥50%. Without GitHub data, target languages named in job
+ *                  full marks at ≥60%. Without GitHub data, target languages named in job
  *                  postings give up to 50% of the points.
  *   Clouds    ×30: best detected target cloud — high confidence 30, medium 24, low 12.
- *   Signals   ×30: target signals detected (high 1, medium 0.8, low 0.4 each), full at 3.
+ *   Signals   ×30: target signals detected (high 1, medium 0.8, low 0.4 each), full at 5.
  */
 export function fitScore(
   profile: Pick<ProductProfile, "target_languages" | "target_clouds" | "target_signals">,
@@ -55,7 +55,7 @@ export function fitScore(
   let langDetail: string;
   if (langs.length) {
     const share = matchedLangs.reduce((s, l) => s + l.pct, 0);
-    langPoints = Math.round(Math.min(1, share / 50) * 40);
+    langPoints = Math.round(Math.min(1, share / 60) * 40);
     langDetail = matchedLangs.length
       ? `${matchedLangs.map((l) => `${l.name} ${l.pct}%`).join(", ")} of ${recent.length ? "recently active" : "all"} public code`
       : "No target languages in public code";
@@ -72,7 +72,7 @@ export function fitScore(
 
   const signals = stack.filter((s) => profile.target_signals.map(lc).includes(lc(s.tech)));
   const signalSum = signals.reduce((s, x) => s + CONF_WEIGHT[x.confidence], 0);
-  const signalPoints = Math.round(Math.min(1, signalSum / 3) * 30);
+  const signalPoints = Math.round(Math.min(1, signalSum / 5) * 30);
   const signalDetail = signals.length ? signals.map((s) => `${s.tech} (${s.confidence})`).join(", ") : "No target signals detected";
 
   const components: ScoreComponent[] = [

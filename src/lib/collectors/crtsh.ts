@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fetchWithTimeout } from "@/lib/http";
+import { fetchWithTimeout, sleep } from "@/lib/http";
 import { techByName } from "@/lib/techDictionary";
 import { UA } from "@/lib/collectors/common";
 import type { EvidenceItem, SourceRef, SourceStatusEntry, Subdomains } from "@/lib/types";
@@ -77,9 +77,24 @@ export interface CrtCollection {
 
 export async function collectCrtsh(domain: string): Promise<CrtCollection> {
   const url = `https://crt.sh/?q=${encodeURIComponent(`%.${domain}`)}&output=json&exclude=expired`;
-  const res = await fetchWithTimeout(url, { headers: { "User-Agent": UA, Accept: "application/json" }, timeoutMs: 25_000 });
-  if (!res.ok) throw new Error(`crt.sh returned HTTP ${res.status}`);
-  const rows = z.array(rowSchema).safeParse(await res.json());
+  // crt.sh is frequently overloaded: one retry after a short pause, 25 s timeout each.
+  let body: unknown = null;
+  let lastError = "";
+  for (let attempt = 0; attempt < 2 && body === null; attempt++) {
+    if (attempt) await sleep(4000);
+    try {
+      const res = await fetchWithTimeout(url, { headers: { "User-Agent": UA, Accept: "application/json" }, timeoutMs: 25_000 });
+      if (!res.ok) {
+        lastError = `crt.sh returned HTTP ${res.status}`;
+        continue;
+      }
+      body = await res.json();
+    } catch (err) {
+      lastError = (err as Error).message;
+    }
+  }
+  if (body === null) throw new Error(`${lastError} (after 2 attempts)`);
+  const rows = z.array(rowSchema).safeParse(body);
   if (!rows.success) throw new Error("crt.sh returned an unexpected response");
   const { count, tooling } = analyzeSubdomains(rows.data, domain);
 
