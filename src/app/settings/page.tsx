@@ -96,7 +96,13 @@ export default async function SettingsPage() {
               <p>Single-user workspace for one account executive. Data lives in your Supabase project; the browser never receives database keys.</p>
               <p>
                 Access protection:{" "}
-                {cfg.basicAuth ? <Badge tone="green">Basic Auth on</Badge> : <Badge tone="amber">Off — set BASIC_AUTH_USER / BASIC_AUTH_PASSWORD to require a login</Badge>}
+                {cfg.basicAuth ? (
+                  <Badge tone="green">Basic Auth on</Badge>
+                ) : (
+                  <Badge tone="amber" className="whitespace-normal">
+                    Off — set BASIC_AUTH_USER / BASIC_AUTH_PASSWORD to require a login
+                  </Badge>
+                )}
               </p>
               <p>
                 AI model: <code className="rounded bg-slate-100 px-1">{cfg.geminiModel}</code> (GEMINI_MODEL)

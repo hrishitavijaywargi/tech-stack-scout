@@ -6,6 +6,15 @@ Nikhil keeps a watchlist of target accounts in Supabase. For each company, Tech 
 
 > Public code, postings and articles show only part of a company's stack. Every report says so, cites its sources and never fills gaps with guesses.
 
+**Live:** https://tech-stack-scout-kappa.vercel.app · **Repo:** https://github.com/hrishitavijaywargi/tech-stack-scout
+
+| Deployment piece | Status |
+|---|---|
+| Supabase project `tech-stack-scout` (ap-south-1) | Migrations applied; queue functions tested |
+| Vercel project `tech-stack-scout` (Git-connected, region `bom1`) | `SUPABASE_URL`, `GEMINI_MODEL`, `CRON_SECRET` set |
+| Supabase `pg_cron` job `tech-stack-scout-refresh` (every 10 min) | Active; URL and secret in Vault; call to the app verified |
+| Still needed in Vercel env | `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `GITHUB_TOKEN` (then redeploy) |
+
 ---
 
 ## What it does

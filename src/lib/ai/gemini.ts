@@ -39,7 +39,8 @@ export async function geminiJson(opts: {
             responseMimeType: "application/json",
             responseSchema: opts.responseSchema,
             temperature: opts.temperature ?? 0.4,
-            maxOutputTokens: 8192,
+            // Thinking tokens count against this limit on Gemini 3.x; leave headroom for the JSON.
+            maxOutputTokens: 16384,
           },
         }),
       });
