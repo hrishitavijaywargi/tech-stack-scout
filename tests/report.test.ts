@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFacts, buildPrompt, insufficientEvidenceReport, validateAiReport, type ReportInput } from "@/lib/ai/report";
+import { buildFacts, buildPrompt, insufficientEvidenceReport, stripCitations, validateAiReport, type ReportInput } from "@/lib/ai/report";
 import { buildStack } from "@/lib/research/analysis";
 import { emptyActivity } from "@/lib/sources/github";
 import type { EvidenceItem } from "@/lib/types";
@@ -85,6 +85,13 @@ describe("validateAiReport", () => {
 
   it("validates the JSON shape", () => {
     expect(validateAiReport({ summary_paragraph_1: P }, facts, stack).ok).toBe(false);
+  });
+});
+
+describe("stripCitations", () => {
+  it("removes leaked fact IDs from prose but keeps real parentheses", () => {
+    expect(stripCitations("Go is dominant (F1, F2, F7). Releases include raft v1.8.0 [R3].")).toBe("Go is dominant. Releases include raft v1.8.0.");
+    expect(stripCitations("Kubernetes (via Helm charts) is used.")).toBe("Kubernetes (via Helm charts) is used.");
   });
 });
 

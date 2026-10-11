@@ -1,6 +1,6 @@
 import "server-only";
 import { env, requireEnv } from "@/lib/env";
-import { HttpError, fetchWithTimeout, withRetry } from "@/lib/http";
+import { HttpError, RateLimitError, fetchWithTimeout, withRetry } from "@/lib/http";
 
 const BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -15,15 +15,83 @@ export function geminiModel() {
   return env().GEMINI_MODEL;
 }
 
-/** One structured-output call to Gemini Flash. Retries 429/5xx/network errors with backoff. */
-export async function geminiJson(opts: {
+type GeminiOpts = {
   system: string;
   prompt: string;
   responseSchema: Record<string, unknown>;
   temperature?: number;
-}): Promise<{ text: string; usage: GeminiUsage; model: string }> {
+};
+
+const overloaded = (err: unknown) => err instanceof QuotaError || (err instanceof HttpError && (err.status === 429 || err.status >= 500 || err.status === 0));
+
+/** A per-day (or other long-window) quota was exhausted: retrying soon is pointless. */
+export class QuotaError extends Error {
+  constructor(
+    public model: string,
+    public resetAt: Date,
+    detail: string,
+  ) {
+    super(`Gemini quota exhausted for ${model} (${detail}); resets ${resetAt.toISOString().slice(0, 16)}Z`);
+    this.name = "QuotaError";
+  }
+}
+
+// Models known to be out of quota in this server instance, so later calls skip them at once.
+const exhaustedUntil = new Map<string, number>();
+
+/** Parse a 429 body: daily quotas (or long retry delays) become a QuotaError. */
+export function quotaFromError(model: string, body: string): QuotaError | null {
+  try {
+    const j = JSON.parse(body) as { error?: { details?: { violations?: { quotaId?: string }[]; retryDelay?: string }[] } };
+    const details = j.error?.details ?? [];
+    const quotaIds = details.flatMap((d) => d.violations ?? []).map((v) => v.quotaId ?? "");
+    const delayS = Number(/^(\d+(?:\.\d+)?)s$/.exec(details.find((d) => d.retryDelay)?.retryDelay ?? "")?.[1] ?? 0);
+    const perDay = quotaIds.some((q) => /PerDay/i.test(q));
+    if (!perDay && delayS < 120) return null;
+    return new QuotaError(model, new Date(Date.now() + Math.max(delayS, 60) * 1000), quotaIds.find(Boolean) ?? "quota");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One structured-output call to Gemini Flash. Retries 429/5xx/network errors with backoff;
+ * if the primary Flash model is overloaded or out of quota, falls back to GEMINI_FALLBACK_MODEL
+ * (also Flash). If every model is out of quota, throws RateLimitError so the queue pauses the
+ * job until the quota resets instead of failing it.
+ */
+export async function geminiJson(opts: GeminiOpts): Promise<{ text: string; usage: GeminiUsage; model: string }> {
+  const { GEMINI_FALLBACK_MODEL: fallback } = env();
+  const models = [geminiModel(), ...(fallback && fallback !== geminiModel() ? [fallback] : [])];
+  const quota: QuotaError[] = [];
+  let lastErr: unknown;
+  for (const [i, model] of models.entries()) {
+    const until = exhaustedUntil.get(model);
+    if (until && until > Date.now()) {
+      quota.push(new QuotaError(model, new Date(until), "cached"));
+      continue;
+    }
+    try {
+      return await callModel(model, opts, i === 0 && models.length > 1 ? 1 : 2);
+    } catch (err) {
+      lastErr = err;
+      if (err instanceof QuotaError) {
+        exhaustedUntil.set(model, err.resetAt.getTime());
+        quota.push(err);
+      }
+      if (!overloaded(err)) throw err;
+      if (i < models.length - 1) console.warn(`[gemini] ${model} unavailable (${(err as Error).message.slice(0, 90)}); trying ${models[i + 1]}`);
+    }
+  }
+  if (quota.length === models.length) {
+    const resetAt = new Date(Math.min(...quota.map((q) => q.resetAt.getTime())));
+    throw new RateLimitError("Gemini (daily free-tier quota)", resetAt);
+  }
+  throw lastErr;
+}
+
+async function callModel(model: string, opts: GeminiOpts, retries: number): Promise<{ text: string; usage: GeminiUsage; model: string }> {
   const key = requireEnv("GEMINI_API_KEY");
-  const model = geminiModel();
   const url = `${BASE}/models/${encodeURIComponent(model)}:generateContent`;
 
   return withRetry(
@@ -47,7 +115,12 @@ export async function geminiJson(opts: {
       if (!res.ok) {
         const retryAfter = Number(res.headers.get("retry-after")) || 0;
         // Body may describe the error; never includes our key.
-        const detail = (await res.text().catch(() => "")).slice(0, 300).replace(/\s+/g, " ");
+        const body = await res.text().catch(() => "");
+        if (res.status === 429) {
+          const q = quotaFromError(model, body);
+          if (q) throw q;
+        }
+        const detail = body.slice(0, 300).replace(/\s+/g, " ");
         throw new HttpError(res.status, url, `Gemini API error ${res.status}: ${detail}`, retryAfter * 1000 || undefined);
       }
       const data = (await res.json()) as {
@@ -71,7 +144,7 @@ export async function geminiJson(opts: {
         },
       };
     },
-    { retries: 3, baseMs: 2000 },
+    { retries, baseMs: 2000 },
   );
 }
 

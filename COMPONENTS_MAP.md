@@ -53,7 +53,7 @@
 ## 5. AI (constrained)
 | Job | Model | Guardrails |
 |---|---|---|
-| Two-paragraph engineering summary | Gemini Flash (`GEMINI_MODEL`, default `gemini-3.8-flash`), structured JSON output | Evidence-only, cited IDs, observation vs. hypothesis labelled |
+| Two-paragraph engineering summary | Gemini Flash (`GEMINI_MODEL` default `gemini-3.6-flash`, fallback `gemini-3.8-flash`), structured JSON output | Evidence-only, cited IDs, observation vs. hypothesis labelled |
 | Outreach opening | Same call | Must reference a verified finding by name. Flagged "verify" on unconfirmed orgs. With no evidence, Gemini isn't called and the report says why. |
 | Not done by AI | — | Technology detection, confidence score, change tracking, activity level |
 

@@ -14,6 +14,7 @@ import {
   buildPrompt,
   geminiResponseSchema,
   insufficientEvidenceReport,
+  stripCitations,
   toInterpretations,
   toOutreach,
   validateAiReport,
@@ -47,7 +48,12 @@ const log = (jobId: string, msg: string) => console.log(`[research ${jobId.slice
  * identify → collect (GitHub, job boards, blog feed, Hacker News) → store sources/findings →
  * aggregate stack → score confidence → Gemini report (validated) → report + snapshot + diff.
  */
-export async function runResearch(job: ResearchJob): Promise<{ reportId: string }> {
+export async function runResearch(job: ResearchJob, deadline = Number.POSITIVE_INFINITY): Promise<{ reportId: string }> {
+  // A run that overshoots its deadline stops before writing anything, so a timed-out job
+  // can never save a late report after the queue has already marked it failed.
+  const checkDeadline = (stage: string) => {
+    if (Date.now() > deadline) throw new Error(`Research timed out (during ${stage})`);
+  };
   const company = await getCompany(job.company_id);
   if (!company) throw new PermanentError("The company was removed from the watchlist.");
   const settings = await getSettings();
@@ -133,6 +139,7 @@ export async function runResearch(job: ResearchJob): Promise<{ reportId: string 
   });
 
   // ---------------------------------------------------------------- 4. Store sources + findings
+  checkDeadline("evidence collection");
   const uniqueSources = [...new Map(sources.map((s) => [s.url, s])).values()];
   const sourceIds = new Map<string, string>();
   for (let i = 0; i < uniqueSources.length; i += 200) {
@@ -226,6 +233,7 @@ export async function runResearch(job: ResearchJob): Promise<{ reportId: string 
     let errors: string[] = [];
     let accepted = null as ReturnType<typeof validateAiReport> | null;
     for (let attempt = 1; attempt <= 3; attempt++) {
+      checkDeadline("AI report");
       aiAttempts = attempt;
       const res = await geminiJson({
         system: SYSTEM_PROMPT,
@@ -252,13 +260,14 @@ export async function runResearch(job: ResearchJob): Promise<{ reportId: string 
     }
     if (!accepted || !accepted.ok) throw new Error(`Gemini's report failed validation after 3 attempts: ${errors.slice(0, 3).join("; ")}`);
     const r = accepted.report;
-    paragraphs = [r.summary_paragraph_1.trim(), r.summary_paragraph_2.trim()];
+    paragraphs = [stripCitations(r.summary_paragraph_1), stripCitations(r.summary_paragraph_2)];
     outreach = toOutreach(r, ident.method === "name_match_unconfirmed");
     interpretations = toInterpretations(r);
     for (const l of r.limitations) if (!limitations.includes(l)) limitations.push(l);
   }
 
   // ---------------------------------------------------------------- 7. Report + snapshot + diff
+  checkDeadline("saving the report");
   const prev = await latestSnapshot(company.id);
   const versionRow = check(
     await db().from("research_reports").select("version").eq("company_id", company.id).order("version", { ascending: false }).limit(1).maybeSingle(),

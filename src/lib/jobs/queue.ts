@@ -12,8 +12,9 @@ import type { ResearchJob } from "@/lib/types";
  * concurrency limit, retried with exponential backoff, and paused on rate limits.
  */
 
-// A job must finish inside one serverless invocation (maxDuration 300s).
-const JOB_TIMEOUT_MS = 150_000;
+// A job must finish inside one serverless invocation (maxDuration 300s). Typical runs take
+// 60–120 s; slow Gemini responses or large GitHub orgs can push past that.
+const JOB_TIMEOUT_MS = 240_000;
 
 export function explainError(err: unknown): { code: string; message: string } {
   if (err instanceof RateLimitError) return { code: "rate_limited", message: `${err.service} rate limit reached. Will resume after ${err.resetAt.toISOString().slice(11, 16)} UTC.` };
@@ -50,6 +51,13 @@ async function handleFailure(job: ResearchJob, err: unknown, refreshDays: number
       .update({ status: "queued", attempts: Math.max(0, job.attempts - 1), run_after: new Date(err.resetAt.getTime() + 5000).toISOString(), locked_until: null, error_code: code, error_message: message })
       .eq("id", job.id);
     await db().from("companies").update({ research_status: "queued", last_error: message }).eq("id", job.company_id);
+    // The limit applies to every job (shared API key/token), so hold the whole queue until the
+    // reset instead of letting each job redo its evidence collection only to hit the same wall.
+    await db()
+      .from("research_jobs")
+      .update({ run_after: new Date(err.resetAt.getTime() + 5000).toISOString(), error_code: code, error_message: `Waiting: ${message}` })
+      .eq("status", "queued")
+      .lt("run_after", err.resetAt.toISOString());
     return;
   }
 
@@ -82,7 +90,7 @@ export interface ProcessResult {
   stoppedReason: string;
 }
 
-export async function processQueue({ budgetMs = 270_000, concurrency = 3 }: { budgetMs?: number; concurrency?: number } = {}): Promise<ProcessResult> {
+export async function processQueue({ budgetMs = 280_000, concurrency = 4 }: { budgetMs?: number; concurrency?: number } = {}): Promise<ProcessResult> {
   const start = Date.now();
   const deadline = start + budgetMs;
   const settings = await getSettings();
@@ -92,7 +100,7 @@ export async function processQueue({ budgetMs = 270_000, concurrency = 3 }: { bu
 
   const runOne = async (job: ResearchJob) => {
     try {
-      const { reportId } = await withTimeout(runResearch(job), JOB_TIMEOUT_MS);
+      const { reportId } = await withTimeout(runResearch(job, Date.now() + JOB_TIMEOUT_MS), JOB_TIMEOUT_MS + 15_000);
       await db()
         .from("research_jobs")
         .update({ status: "succeeded", completed_at: new Date().toISOString(), locked_until: null, report_id: reportId, error_code: null, error_message: null })

@@ -89,7 +89,7 @@ export function LiveProgress({ compact = false }: { compact?: boolean }) {
       )}
       {!compact && (
         <p className="mt-2 text-xs text-slate-500">
-          {data.running} running · {data.queued} queued{b?.failed ? ` · ${b.failed} failed in this batch` : ""}. Research runs on the server (3 companies at a time) and continues if you close this page.
+          {data.running} running · {data.queued} queued{b?.failed ? ` · ${b.failed} failed in this batch` : ""}. Research runs on the server (4 companies at a time) and continues if you close this page.
         </p>
       )}
     </Card>

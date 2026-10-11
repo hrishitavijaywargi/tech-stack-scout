@@ -160,7 +160,18 @@ Hard rules:
 - Public repositories, postings and articles show only part of a company's stack. Say so where it matters; never present public code as the full internal stack.
 - Distinguish observation (directly in evidence) from hypothesis (your inference). Phrase hypotheses with "may", "suggests", "could".
 - If a category has no evidence, say "not publicly found" rather than guessing.
-- Plain text only: no markdown, no bullet points, no line breaks inside a paragraph.`;
+- Name a technology only if it is in the EVIDENCE list. When describing the seller's product, use the product's name in that sentence and do not name technologies the company has not been observed using (say "preview environments", not "Kubernetes preview environments", unless Kubernetes is in the evidence).
+- Plain text only: no markdown, no bullet points, no line breaks inside a paragraph.
+- Never write fact IDs (F1, R2, M1…) inside summary paragraphs, the outreach line or relevance text; put them only in the *_ids arrays. The reader is a salesperson.`;
+
+/** Remove citation IDs like "(F1, F2)" or "[R1]" that leaked into prose. */
+export function stripCitations(text: string) {
+  return text
+    .replace(/\s*[([]\s*(?:[FRNMJA]\d+\s*[,;]?\s*)+[)\]]/g, "")
+    .replace(/\s+([.,;:])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
 
 export function buildPrompt(input: ReportInput, facts: EvidenceFact[], previousErrors: string[] = []) {
   const id = input.identification;
@@ -230,7 +241,8 @@ export function validateAiReport(raw: unknown, facts: EvidenceFact[], stack: Sta
 
   for (const [k, p] of [["summary_paragraph_1", r.summary_paragraph_1], ["summary_paragraph_2", r.summary_paragraph_2]] as const) {
     if (/\n/.test(p.trim())) errors.push(`${k} must be a single paragraph without line breaks.`);
-    if (/(^|\s)[-*•]\s|#{1,6}\s|\*\*/.test(p)) errors.push(`${k} must be plain prose (no markdown or bullets).`);
+    // Bullets only count at the start of a line; " - " inside a sentence is just a dash.
+    if (/(^|\n)\s*([-*•]|\d+\.)\s|(^|\n)\s*#{1,6}\s|\*\*/.test(p)) errors.push(`${k} must be plain prose (no markdown or bullets).`);
     const unsupported = unsupportedTechMentions(p, stack, productName);
     if (unsupported.length) errors.push(`${k} mentions ${unsupported.join(", ")}, which is not in the evidence. Remove it or state it was not found.`);
   }
@@ -271,8 +283,8 @@ export function validateAiReport(raw: unknown, facts: EvidenceFact[], stack: Sta
 export function toOutreach(r: AiReport, needsVerification: boolean): OutreachResult {
   return {
     status: r.outreach.status,
-    line: r.outreach.status === "ready" ? r.outreach.line.trim() : "",
-    relevance: r.outreach.relevance.trim(),
+    line: r.outreach.status === "ready" ? stripCitations(r.outreach.line) : "",
+    relevance: stripCitations(r.outreach.relevance),
     referencedIds: r.outreach.referenced_ids,
     insufficientReason: r.outreach.insufficient_reason.trim(),
     suggestedResearch: r.outreach.suggested_research,
@@ -281,7 +293,7 @@ export function toOutreach(r: AiReport, needsVerification: boolean): OutreachRes
 }
 
 export function toInterpretations(r: AiReport): Interpretation[] {
-  return r.interpretations.map((i) => ({ statement: i.statement, type: i.type, supportingIds: i.supporting_ids }));
+  return r.interpretations.map((i) => ({ statement: stripCitations(i.statement), type: i.type, supportingIds: i.supporting_ids }));
 }
 
 /** Deterministic report used when there is no evidence at all — no AI call, nothing invented. */

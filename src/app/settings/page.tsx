@@ -54,7 +54,7 @@ export default async function SettingsPage() {
                     <li>
                       <strong>Vercel Cron</strong> calls the same endpoint every Monday 02:00 UTC as a backup trigger (<code>vercel.json</code>).
                     </li>
-                    <li>Both are authenticated with CRON_SECRET and reuse the manual research pipeline, 3 companies at a time.</li>
+                    <li>Both are authenticated with CRON_SECRET and reuse the manual research pipeline, 4 companies at a time.</li>
                   </ul>
                   <p className="text-slate-600">
                     Last scheduler run:{" "}

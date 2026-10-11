@@ -35,6 +35,17 @@ describe("identifyGithubOrg", () => {
     expect(ident.candidates.length).toBe(2);
   });
 
+  it("prefers the name-matching, larger org when several link to the website", async () => {
+    mockFetch([
+      [/search\/users/, () => json({ items: [{ login: "ShopifyUS" }, { login: "Shopify" }] })],
+      [/\/users\/ShopifyUS$/, () => json({ login: "ShopifyUS", type: "Organization", name: "Shopify US", blog: "https://shopify.com", email: null, html_url: "https://github.com/ShopifyUS", public_repos: 2 })],
+      [/\/users\/(S|s)hopify$/, () => json({ login: "Shopify", type: "Organization", name: "Shopify", blog: "https://www.shopify.com", email: null, html_url: "https://github.com/Shopify", public_repos: 1500 })],
+    ]);
+    const { ident } = await identifyGithubOrg(new GitHubClient(), { name: "Shopify", domain: "shopify.com", github_org: null });
+    expect(ident.login).toBe("Shopify");
+    expect(ident.method).toBe("verified_domain");
+  });
+
   it("marks a name-only match as unconfirmed", async () => {
     mockFetch([
       [/search\/users/, () => json({ items: [] })],

@@ -11,9 +11,9 @@ Nikhil keeps a watchlist of target accounts in Supabase. For each company, Tech 
 | Deployment piece | Status |
 |---|---|
 | Supabase project `tech-stack-scout` (ap-south-1) | Migrations applied; queue functions tested |
-| Vercel project `tech-stack-scout` (Git-connected, region `bom1`) | `SUPABASE_URL`, `GEMINI_MODEL`, `CRON_SECRET` set |
+| Vercel project `tech-stack-scout` (Git-connected, region `bom1`) | All env vars set (secrets marked sensitive) |
 | Supabase `pg_cron` job `tech-stack-scout-refresh` (every 10 min) | Active; URL and secret in Vault; call to the app verified |
-| Still needed in Vercel env | `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `GITHUB_TOKEN` (then redeploy) |
+| Gemini free tier | 20 requests/day **per model** (3.6 Flash and 3.8 Flash each). When both are exhausted, jobs wait for the daily reset automatically. Enable billing on the Google AI Studio project for production-scale use. |
 
 ---
 
@@ -27,7 +27,7 @@ Nikhil keeps a watchlist of target accounts in Supabase. For each company, Tech 
 | Two-paragraph summary + outreach line | Paragraph 1 covers the environment; paragraph 2 covers activity and relevance, with observations vs. hypotheses marked. The outreach line must name a specific verified finding. If evidence is thin, the report says why and lists the next research steps instead. |
 | Confidence | Defined scoring method, not AI-generated: GitHub identification, code coverage, source diversity and recency (25 points each). Unconfirmed matches are capped. |
 | Weekly refresh | Supabase `pg_cron` calls `/api/cron/refresh` every 10 minutes, and Vercel Cron calls it weekly as a backup. Each company is refreshed 7 days after its last run. The same pipeline handles manual, bulk and scheduled runs. |
-| Bulk research | Jobs are queued in Postgres (one active job per company, claimed with `FOR UPDATE SKIP LOCKED`), run 3 at a time, retried with exponential backoff and paused on rate limits. The UI shows live "12 of 20 companies researched" progress. CSV export is included. |
+| Bulk research | Jobs are queued in Postgres (one active job per company, claimed with `FOR UPDATE SKIP LOCKED`), run 4 at a time, retried with exponential backoff and paused on rate limits. The UI shows live "12 of 20 companies researched" progress. CSV export is included. |
 | What's Changed? | Each run saves a snapshot. The newest snapshot is diffed with the previous one to show newly observed technologies, new postings, releases, new repos, language shifts, activity changes, and items *not re-observed*. That last label is never "stopped using". |
 
 ## Architecture
@@ -40,7 +40,7 @@ Next.js route handlers (server only) ──► Supabase Postgres (service-role k
    │                                         ▲
    │  after() / waitUntil                     │ pg_cron every 10 min ──► GET /api/cron/refresh (Bearer CRON_SECRET)
    ▼                                         │ Vercel Cron Mon 02:00 UTC ─┘
-Job processor (src/lib/jobs/queue.ts) — claim_research_jobs() RPC, concurrency 3, retries, rate-limit pause
+Job processor (src/lib/jobs/queue.ts) — claim_research_jobs() RPC, concurrency 4, 240 s per job, retries, rate-limit pause
    ▼
 Research pipeline (src/lib/research/pipeline.ts)
    1 identify GitHub org (provided → verified by website link → unconfirmed name match)
@@ -79,7 +79,8 @@ Copy `.env.example` to `.env.local` and fill in:
 | `SUPABASE_URL` | Supabase → Project Settings → API | |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API keys → **secret** key | Server-only. Never prefixed `NEXT_PUBLIC_`. |
 | `GEMINI_API_KEY` | https://aistudio.google.com/apikey | |
-| `GEMINI_MODEL` | default `gemini-3.8-flash` | Current stable Flash model per Google's model list (Oct 2026). Change it here only. |
+| `GEMINI_MODEL` | default `gemini-3.6-flash` | Stable Gemini Flash model. Chosen over `gemini-3.8-flash` because the 3.8 free tier allows only 20 requests/day. |
+| `GEMINI_FALLBACK_MODEL` | default `gemini-3.8-flash` | Used only when the primary is overloaded or out of quota. If both are out of daily quota, jobs pause until reset (not failed). |
 | `GITHUB_TOKEN` | GitHub → Settings → Developer settings → Fine-grained token, *Public repositories (read-only)* | Raises the limit from 60 to 5,000 requests/hour. One company uses ~20–40 API requests. |
 | `CRON_SECRET` | `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` | Authenticates scheduler calls. |
 | `BASIC_AUTH_USER` / `BASIC_AUTH_PASSWORD` | optional | Puts a login prompt in front of the whole app. |
@@ -92,7 +93,7 @@ Tables: `companies`, `research_jobs`, `research_batches`, `research_sources`, `r
 ### 4. Run locally
 ```bash
 npm install
-npm run dev        # http://localhost:3000
+npm run dev        # http://localhost:3100
 ```
 Locally, research runs in the background of the dev server after each action. The weekly schedule needs the deployed URL (step 6).
 
@@ -130,5 +131,5 @@ npx tsx scripts/smoke-github.ts "HashiCorp" hashicorp.com hashicorp 3   # live r
 - **Job postings** are read only from Greenhouse, Lever and Ashby public APIs. Other ATSs need a different integration. A guessed board is used only when the board name or postings name the company.
 - **Blogs:** only RSS/Atom feeds are read (auto-discovered via `<link rel="alternate">`, or a URL you supply). Some sites block automated requests, and the report says so when that happens.
 - **GitHub identification:** a name match is never treated as confirmed. It's labelled *unconfirmed*, the confidence level is capped, and the outreach line is flagged "verify before sending" until you confirm the org.
-- **Throughput:** each serverless invocation processes jobs 3 at a time for up to ~270s, then chains another invocation. The dashboard shows *measured* average research time per company and promises no fixed duration.
+- **Throughput:** each serverless invocation starts up to 4 jobs (each capped at 240 s, so it always finishes inside the 300 s function limit), then chains another invocation. The dashboard shows *measured* average research time per company and promises no fixed duration.
 - **Auth:** single-user app. Enable Basic Auth for a public deployment. The database is not reachable from the browser (RLS on, no anon policies).

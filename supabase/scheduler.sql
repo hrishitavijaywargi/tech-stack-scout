@@ -5,7 +5,7 @@
 --
 -- What it does: every 10 minutes, Supabase calls GET /api/cron/refresh on the Vercel app.
 -- That endpoint (1) queues every active company whose weekly refresh is due and
--- (2) drains the research queue (3 companies at a time, with retries/backoff).
+-- (2) drains the research queue (4 companies at a time, with retries/backoff).
 -- Idle runs cost one quick HTTP request. Vercel Cron (vercel.json, Mondays 02:00 UTC)
 -- calls the same endpoint as a second, independent trigger.
 

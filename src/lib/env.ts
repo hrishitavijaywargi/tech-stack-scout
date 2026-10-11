@@ -10,7 +10,9 @@ const schema = z.object({
   SUPABASE_URL: z.url().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(20).optional(),
   GEMINI_API_KEY: z.string().min(10).optional(),
-  GEMINI_MODEL: z.string().min(3).default("gemini-3.8-flash"),
+  GEMINI_MODEL: z.string().min(3).default("gemini-3.6-flash"),
+  // Used only when the primary Flash model is overloaded (429/5xx) after retries.
+  GEMINI_FALLBACK_MODEL: z.string().min(3).default("gemini-3.8-flash"),
   GITHUB_TOKEN: z.string().min(10).optional(),
   CRON_SECRET: z.string().min(16).optional(),
   BASIC_AUTH_USER: z.string().optional(),
@@ -58,6 +60,7 @@ export function configStatus() {
     supabase: Boolean(e.SUPABASE_URL && e.SUPABASE_SERVICE_ROLE_KEY),
     gemini: Boolean(e.GEMINI_API_KEY),
     geminiModel: e.GEMINI_MODEL,
+    geminiFallbackModel: e.GEMINI_FALLBACK_MODEL,
     github: Boolean(e.GITHUB_TOKEN),
     cronSecret: Boolean(e.CRON_SECRET),
     basicAuth: Boolean(e.BASIC_AUTH_USER && e.BASIC_AUTH_PASSWORD),

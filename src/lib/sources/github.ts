@@ -207,15 +207,18 @@ export async function identifyGithubOrg(
   const unique = [...new Map(profiles.map((p) => [p.login.toLowerCase(), p])).values()];
   const candidates = unique.map((p) => ({ login: p.login, name: p.name, blog: p.blog || null, url: p.html_url }));
 
-  const verified = unique.find((p) => profileMatchesDomain(p, company.domain));
+  // Several orgs can link to the same website (regional or side accounts such as "ShopifyUS").
+  // Prefer the one whose name matches the company, then the one with the most public repos.
+  const target = normalizeCompanyName(company.name);
+  const nameMatch = (p: GhProfile) => normalizeCompanyName(p.name ?? "") === target || normalizeCompanyName(p.login) === target;
+  const verified = unique
+    .filter((p) => profileMatchesDomain(p, company.domain))
+    .sort((a, b) => Number(nameMatch(b)) - Number(nameMatch(a)) || b.public_repos - a.public_repos)[0];
   if (verified) {
     return toIdent(verified, "verified_domain", `Matched: the GitHub organization's website (${verified.blog || verified.email}) is on ${company.domain}.`, candidates);
   }
 
-  const target = normalizeCompanyName(company.name);
-  const nameMatches = unique
-    .filter((p) => normalizeCompanyName(p.name ?? "") === target || normalizeCompanyName(p.login) === target)
-    .sort((a, b) => b.public_repos - a.public_repos);
+  const nameMatches = unique.filter(nameMatch).sort((a, b) => b.public_repos - a.public_repos);
   if (nameMatches.length) {
     const p = nameMatches[0];
     return toIdent(
