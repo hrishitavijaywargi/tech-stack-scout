@@ -1,135 +1,193 @@
 # Tech Stack Scout
 
-AI-powered engineering intelligence for enterprise sales (MESA C4 · Problem Statement 5).
+AI-powered tech-stack intelligence for a B2B sales rep (MESA C4 · Problem Statement 5).
 
-Nikhil keeps a watchlist of target accounts in Supabase. For each company, Tech Stack Scout collects **public, traceable evidence** of how it builds software: the languages in its public code, cloud and infrastructure tooling, architecture signals, and recent engineering activity. **Gemini Flash** then writes a two-paragraph engineering summary and an evidence-based first line for outreach. Research refreshes **every 7 days on the server**, and a *What's Changed?* view highlights new reasons to get in touch.
+Nikhil sells a developer-productivity tool to engineering teams. Before every call he needs to know how the target company builds software: its languages, its cloud and infrastructure tooling, and how actively it ships. Tech Stack Scout keeps his **Supabase watchlist** current automatically. Every week it collects **live public evidence** from 7 sources, scores activity and product fit **in code**, and asks **Gemini Flash** for a two-paragraph engineering summary, three talking points and a specific, non-generic outreach opening line. Every claim links back to its source.
 
-> Public code, postings and articles show only part of a company's stack. Every report says so, cites its sources and never fills gaps with guesses.
-
-**Live:** https://tech-stack-scout-kappa.vercel.app · **Repo:** https://github.com/hrishitavijaywargi/tech-stack-scout
-
-| Deployment piece | Status |
-|---|---|
-| Supabase project `tech-stack-scout` (ap-south-1) | Migrations applied; queue functions tested |
-| Vercel project `tech-stack-scout` (Git-connected, region `bom1`) | All env vars set (secrets marked sensitive) |
-| Supabase `pg_cron` job `tech-stack-scout-refresh` (every 10 min) | Active; URL and secret in Vault; call to the app verified |
-| Gemini free tier | 20 requests/day **per model** (3.6 Flash and 3.8 Flash each). When both are exhausted, jobs wait for the daily reset automatically. Enable billing on the Google AI Studio project for production-scale use. |
+**Live app:** https://tech-stack-scout-kappa.vercel.app · **Demo password:** `scout-demo-2026`
+**Repo:** https://github.com/hrishitavijaywargi/tech-stack-scout · **Components Map:** [COMPONENTS_MAP.md](COMPONENTS_MAP.md)
 
 ---
 
 ## What it does
 
-| Need | How it's met |
+| Page | What Nikhil sees |
 |---|---|
-| Manage the watchlist without code | Add one company or upload a CSV of 20+ companies in the UI, or edit the `companies` table directly in Supabase. Duplicates are blocked (same name, website or GitHub org). |
-| Languages, cloud and infra, activity | GitHub REST API (org repos, language bytes, recursive file trees, dependency manifests, CI workflows, releases, commits) plus Greenhouse / Lever / Ashby job-board APIs, the company's engineering RSS/Atom feed, and Hacker News (Algolia API). |
-| No invented facts | A deterministic catalog (`src/lib/research/catalog.ts`) turns files, dependencies and text into findings with source URLs. Gemini receives only those ID'd facts. Its JSON is validated with Zod **and** against the evidence: citations must exist, it can't mention unsupported technologies, and placeholders, generic compliments and "you have a problem" claims are rejected. Invalid answers are retried up to 3 times with the errors fed back. |
-| Two-paragraph summary + outreach line | Paragraph 1 covers the environment; paragraph 2 covers activity and relevance, with observations vs. hypotheses marked. The outreach line must name a specific verified finding. If evidence is thin, the report says why and lists the next research steps instead. |
-| Confidence | Defined scoring method, not AI-generated: GitHub identification, code coverage, source diversity and recency (25 points each). Unconfirmed matches are capped. |
-| Weekly refresh | Supabase `pg_cron` calls `/api/cron/refresh` every 10 minutes, and Vercel Cron calls it weekly as a backup. Each company is refreshed 7 days after its last run. The same pipeline handles manual, bulk and scheduled runs. |
-| Bulk research | Jobs are queued in Postgres (one active job per company, claimed with `FOR UPDATE SKIP LOCKED`), run 4 at a time, retried with exponential backoff and paused on rate limits. The UI shows live "12 of 20 companies researched" progress. CSV export is included. |
-| What's Changed? | Each run saves a snapshot. The newest snapshot is diffed with the previous one to show newly observed technologies, new postings, releases, new repos, language shifts, activity changes, and items *not re-observed*. That last label is never "stopped using". |
+| **Watchlist** `/` | Every active account: top 3 languages (coloured chips), primary cloud, activity score with a 52-week commit sparkline, fit score, open engineering roles with a trend arrow, and last refreshed (with a stale warning after 7 days). Sort and filter by fit, activity, cloud or language, or search. Add a company (with **Auto-detect** of GitHub org, job board and RSS), upload a CSV, remove (deactivate), refresh now, export CSV. The header shows the last refresh run and the next scheduled run. |
+| **Company brief** `/company/[id]` | The Gemini summary (two paragraphs) with observation vs hypothesis labels, plus the outreach line in a highlighted card with a copy button, its rationale and 3 talking points with evidence links. Also: fit and activity score breakdowns, a language donut (recent 180 days / all-time toggle), the 52-week commit chart, infrastructure grouped by category with confidence badges and expandable evidence, hiring (open roles, a tech-mention bar chart, sample roles), a signals feed (blog, Hacker News, grounded web research), DNS and certificate findings, snapshot history and "What's changed?", and a data-source status panel. |
+| **Settings** `/settings` | Edit the **product profile** (which drives fit scores and outreach), refresh run history with errors, "Refresh all stale now", research preferences, removed companies (restore), and live API connection checks. |
+| **Research activity** `/activity` | Per-company jobs: attempts, durations, explained errors, retry. |
 
 ## Architecture
 
-```
-Browser (Next.js pages, no DB keys)
-   │  fetch /api/*
-   ▼
-Next.js route handlers (server only) ──► Supabase Postgres (service-role key, RLS on, no public policies)
-   │                                         ▲
-   │  after() / waitUntil                     │ pg_cron every 10 min ──► GET /api/cron/refresh (Bearer CRON_SECRET)
-   ▼                                         │ Vercel Cron Mon 02:00 UTC ─┘
-Job processor (src/lib/jobs/queue.ts) — claim_research_jobs() RPC, concurrency 4, 240 s per job, retries, rate-limit pause
-   ▼
-Research pipeline (src/lib/research/pipeline.ts)
-   1 identify GitHub org (provided → verified by website link → unconfirmed name match)
-   2 GitHub: repos, languages, file trees, manifests, CI workflows, releases, commits (ETag-cached)
-   3 Job boards (Greenhouse/Lever/Ashby APIs) · 4 RSS/Atom feed · 5 Hacker News
-   6 store sources + findings → aggregate stack (F1…) → confidence score
-   7 Gemini Flash (structured JSON) → Zod + evidence validation → retry ≤3
-   8 report (versioned) + snapshot + diff vs previous snapshot → company status / next refresh
+```mermaid
+flowchart LR
+  subgraph Triggers
+    VC1[Vercel Cron<br/>weekly Mon 06:00 UTC]
+    VC2[Vercel Cron<br/>daily 07:00 UTC]
+    PG[Supabase pg_cron<br/>every 10 min]
+    UI[Dashboard actions<br/>refresh / add / CSV]
+  end
+  subgraph Supabase
+    C[(companies<br/>watchlist)]
+    Q[(research_jobs<br/>queue)]
+    S[(company_snapshots)]
+    I[(company_insights)]
+    P[(product_profile)]
+    R[(refresh_runs)]
+  end
+  VC1 & VC2 & PG -->|Bearer CRON_SECRET| CR[/api/cron/refresh/]
+  UI --> API[/api/... routes/]
+  CR -->|enqueue_due_refreshes| Q
+  API -->|enqueue_research| Q
+  C --> Q
+  Q -->|claim_research_jobs<br/>SKIP LOCKED, 4 at a time| PL[Research pipeline]
+  subgraph Collectors [Collectors — parallel, failures isolated]
+    GH[GitHub GraphQL + REST]
+    JB[Greenhouse / Lever / Ashby]
+    DNS[Google DNS-over-HTTPS]
+    CT[crt.sh CT logs]
+    HN[Hacker News Algolia]
+    RSS[Blog RSS]
+    WR[Gemini + Google Search]
+  end
+  PL --> Collectors
+  Collectors --> SC[Scoring<br/>activity · fit · confidence]
+  P --> SC
+  SC --> GM[Gemini Flash<br/>structured JSON + validation]
+  GM --> S & I
+  PL --> R
+  S & I --> V[latest_company_state view] --> D[Dashboard]
 ```
 
-| Module | Path |
-|---|---|
-| Company management, CSV import/export | `src/lib/companyInput.ts`, `src/lib/data.ts`, `src/app/api/companies/**`, `src/app/api/export` |
-| GitHub integration | `src/lib/sources/github.ts` |
-| Additional public sources | `src/lib/sources/jobs.ts`, `src/lib/sources/articles.ts` |
-| Technology detection | `src/lib/research/catalog.ts` |
-| Aggregation, confidence, change tracking | `src/lib/research/analysis.ts` |
-| Gemini Flash analysis | `src/lib/ai/gemini.ts`, `src/lib/ai/report.ts` |
-| Research pipeline | `src/lib/research/pipeline.ts` |
-| Job processing and scheduling | `src/lib/jobs/queue.ts`, `src/app/api/research`, `src/app/api/cron/refresh`, `supabase/scheduler.sql`, `vercel.json` |
-| Database | `supabase/migrations/*.sql` |
-| Env validation | `src/lib/env.ts` |
+The same pipeline (`src/lib/research/pipeline.ts`) serves manual, bulk and scheduled refreshes. Jobs are claimed atomically in Postgres (one active job per company), run 4 at a time, and each is capped at 240 s so it always finishes inside Vercel's 300 s function limit. When the budget runs low the processor stops starting jobs and chains another invocation. Failures retry with exponential backoff. Rate limits (GitHub, or Gemini's daily quota) pause the whole queue until the reset instead of failing jobs.
 
-Pages: **Dashboard** `/` · **Watchlist** `/watchlist` · **Company report** `/companies/[id]` · **Research activity** `/activity` · **Settings** `/settings`.
+## Data sources
+
+| # | Source | Module | What it contributes |
+|---|---|---|---|
+| 1 | **GitHub GraphQL + REST** (token) | `collectors/github.ts` | GraphQL lists up to 300 public non-fork repos **with languages** in 3 calls. All-time and **recent (180 d)** language mix. REST adds the 52-week `stats/commit_activity` (retries 202s), contributors, releases (count in 90 d), recursive file trees (Docker, k8s, Helm, Terraform, CI configs, proto), dependency manifests (Kafka, gRPC, Redis, Postgres, OTel, Datadog, Sentry, Prisma…), CI workflow contents (aws-actions, google-github-actions, azure/login, docker/build-push-action), **Terraform providers** (`aws`/`google`/`azurerm`/`cloudflare`) and **Serverless** `provider.name`. Microservices heuristic: Dockerfiles in several repos + Kubernetes/Helm + protobuf/gRPC. |
+| 2 | **Greenhouse / Lever / Ashby** public job APIs | `collectors/jobs.ts` | Uses the stored `job_board_provider`/`job_board_slug`, or auto-discovers a board (accepted only if the board or postings name the company) and **saves it back**. Separates engineering roles, counts how many postings mention each technology, picks the 5 most relevant roles, and tracks hiring velocity against the previous snapshot. |
+| 3 | **Google Public DNS (DoH)** | `collectors/dns.ts` | CNAME/NS → hosting and CDN (AWS, GCP, Azure, Vercel, Netlify, Heroku, Fastly, Akamai, Cloudflare). MX → Google Workspace / Microsoft 365. TXT → about 45 SaaS verification prefixes (Atlassian, Docker, Stripe, Okta, Slack…). SPF includes → SendGrid, Mailgun, SES… |
+| 4 | **crt.sh** Certificate Transparency | `collectors/crtsh.ts` | Unexpired subdomains, deduplicated with wildcards dropped. Flags tooling (grafana, jenkins, argocd, k8s, vault, sentry, jira, airflow, staging…). 25 s timeout, background only. |
+| 5 | **Hacker News** (Algolia API) | `collectors/hn.ts` | Last-365-day stories on the company's domain, or naming it with an engineering keyword. Top 5 by points. |
+| 6 | **Engineering blog RSS** (`rss-parser`) | `collectors/rss.ts` | Uses `blog_rss_url` or auto-discovers via `<link rel="alternate">` and common feed paths (and **saves it back**). Takes the 5 latest posts and flags technical ones. |
+| 7 | **Gemini Flash + Google Search grounding** | `collectors/webResearch.ts` | Talks, engineering posts, migrations and announcements from the last 12 months. Each finding's URL comes from the API's `groundingSupports` → `groundingChunks`, not from model text. Ungrounded lines are dropped. Treated as weak, supplemental evidence. |
+
+All detection uses one dictionary, [`src/lib/techDictionary.ts`](src/lib/techDictionary.ts): about 185 technologies, each with a category, aliases (golang → Go, GCP → Google Cloud, k8s → Kubernetes) and path/dependency/text patterns. It's shared by repository scanning, job parsing, DNS mapping and the UI.
+
+## Scoring (deterministic — computed in code, not by the LLM)
+
+**activity_score (0–100)** — `src/lib/scoring.ts`. Each input is log-scaled, `log(1+x)/log(1+full)`, capped at 1:
+
+| Input | Weight | Full marks at |
+|---|---|---|
+| Commits in last 90 days (52-week stats of the 10 most recently pushed repos) | 30 | 1,500 |
+| Repos pushed in last 30 days | 15 | 25 |
+| Repos pushed in last 90 days | 10 | 50 |
+| Distinct contributors (top 5 repos, bots excluded) | 15 | 100 |
+| Releases in last 90 days | 15 | 20 |
+| Open engineering roles | 15 | 50 |
+
+Very active orgs land at 80–100 (Stripe scores 94) and dormant ones at 0–20.
+
+**fit_score (0–100)** compares against the `product_profile`:
+
+- **Target languages ×40:** the share of *recently active* code (180 d; else all-time) in target languages, with full marks at ≥50%. With no public code, target languages named in job postings give up to 20 points.
+- **Target clouds ×30:** the best detected target cloud scores 30 at high confidence, 24 at medium, 12 at low.
+- **Target signals ×30:** each detected target signal (Microservices, Kubernetes, Monorepo…) adds 1 at high confidence, 0.8 at medium, 0.4 at low. Full marks at 3.
+
+**Confidence per technology:** **high** = found in 2+ independent source families (code, jobs, DNS, certificate logs, articles, web research). **medium** = one strong source (public code/config, or 3+ job postings). **low** = a weak signal only (one DNS record, a couple of job mentions, an article, a subdomain).
+
+**Language mix:** shares are by code bytes, but each repo's weight is capped at 2× the median repo size, so a vendored codebase (e.g. Discord's `postgres_bazel`) can't make the org look like a C shop. Raw byte totals are kept.
+
+**Research confidence (High/Medium/Low):** GitHub identification + code coverage + source diversity + recency (25 points each). Unconfirmed GitHub matches are capped at Medium.
+
+## Gemini insights
+
+Gemini never sees raw API dumps. `src/lib/ai/report.ts` builds a compact **evidence pack** of ID'd facts:
+- **F*n*:** technologies with confidence
+- **M*n*:** activity and its trend versus the previous snapshot
+- **R*n*:** releases
+- **H1 / J*n*:** hiring, with trend and top tech mentions, plus sample roles
+- **D*n*:** DNS
+- **S1:** subdomain tooling
+- **A*n*:** blog and Hacker News items
+- **W*n*:** grounded web findings
+
+The pack also carries the scores and the product profile. The call goes through the official **`@google/genai` SDK** with `responseMimeType: application/json` and a `responseSchema`, and returns:
+- a summary of two paragraphs
+- an outreach line (one sentence, under 35 words)
+- the outreach rationale
+- 3 talking points with evidence IDs
+- observation/hypothesis statements
+- limitations
+
+The output is validated with Zod **and against the evidence**: every cited ID must exist, it can't name technologies absent from the evidence, and brackets/placeholders, banned phrases ("I hope this finds you well", "I noticed your company is growing"…) and "you have a problem" claims are rejected. The line must name a concrete cited detail. On failure it retries with the errors as corrective feedback (up to 3 attempts). With no evidence at all, a deterministic "insufficient evidence" brief is written instead. The model name is stored.
+
+Models are configurable: `GEMINI_MODEL` (default `gemini-3.6-flash`) and `GEMINI_FALLBACK_MODEL` (`gemini-3.8-flash`), both stable Flash models. The fallback covers 429/5xx errors, and web research starts on the fallback so the two calls per company use separate free-tier quotas.
 
 ## Setup
 
-### 1. Prerequisites
-Node 20.9+ (tested on 24), a Supabase project, a Gemini API key, and a GitHub token (recommended).
+1. **Supabase.** Run `supabase/migrations/*.sql` in order (SQL editor or `supabase db push`), then `supabase/seed.sql` (8 companies, verified with `npx tsx scripts/verify-seed.ts`). Tables: `companies`, `company_snapshots`, `company_insights`, `product_profile`, `refresh_runs`, `research_jobs`, `research_batches`, `research_sources`, `research_findings`, `app_settings`, `http_cache`; view `latest_company_state`. RLS is enabled on every table with no anon/authenticated policies, so the browser can't read the database. All reads and writes happen server-side with the service-role key.
+2. **Environment** (`.env.example` → `.env.local`, and the same keys in Vercel):
 
-### 2. Environment variables
-Copy `.env.example` to `.env.local` and fill in:
+   | Variable | Notes |
+   |---|---|
+   | `NEXT_PUBLIC_SUPABASE_URL` | Project URL (`SUPABASE_URL` also accepted) |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Publishable key; not used by the browser today |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Secret key, **server only** |
+   | `GITHUB_TOKEN` | Public read access; needed for GraphQL and 5,000 requests/h |
+   | `GEMINI_API_KEY` | https://aistudio.google.com/apikey |
+   | `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL` | Default `gemini-3.6-flash` / `gemini-3.8-flash` |
+   | `WEB_RESEARCH_ENABLED` | `true` (adds one Gemini call per company) |
+   | `CRON_SECRET` | Protects `/api/cron/refresh` |
+   | `APP_PASSWORD` | Password gate (httpOnly cookie). Demo: `scout-demo-2026` |
+3. **Run locally:** `npm install && npm run dev` → http://localhost:3100
+4. **Deploy:** import the GitHub repo in Vercel and add the env vars. `vercel.json` sets region `bom1`, `maxDuration: 300`, and two crons:
+   - `/api/cron/refresh?source=vercel-weekly` at `0 6 * * 1` (weekly, Monday 06:00 UTC)
+   - `/api/cron/refresh?source=vercel-daily` at `0 7 * * *` (daily: anything older than 7 days, so the queue always drains)
+5. **Supabase pg_cron (recommended):** edit and run `supabase/scheduler.sql`. It calls the same endpoint every 10 minutes, which picks up rows added directly in Supabase, retries, and chained batches. Verify with `select status_code, content from net._http_response order by id desc limit 5;`.
+6. **Manual trigger:** `curl -H "Authorization: Bearer $CRON_SECRET" https://<app>/api/cron/refresh`
 
-| Variable | Where to get it | Notes |
-|---|---|---|
-| `SUPABASE_URL` | Supabase → Project Settings → API | |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API keys → **secret** key | Server-only. Never prefixed `NEXT_PUBLIC_`. |
-| `GEMINI_API_KEY` | https://aistudio.google.com/apikey | |
-| `GEMINI_MODEL` | default `gemini-3.6-flash` | Stable Gemini Flash model. Chosen over `gemini-3.8-flash` because the 3.8 free tier allows only 20 requests/day. |
-| `GEMINI_FALLBACK_MODEL` | default `gemini-3.8-flash` | Used only when the primary is overloaded or out of quota. If both are out of daily quota, jobs pause until reset (not failed). |
-| `GITHUB_TOKEN` | GitHub → Settings → Developer settings → Fine-grained token, *Public repositories (read-only)* | Raises the limit from 60 to 5,000 requests/hour. One company uses ~20–40 API requests. |
-| `CRON_SECRET` | `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` | Authenticates scheduler calls. |
-| `BASIC_AUTH_USER` / `BASIC_AUTH_PASSWORD` | optional | Puts a login prompt in front of the whole app. |
+## Adding and removing companies without code
 
-### 3. Database
-Run both files in `supabase/migrations/` in order (Supabase SQL editor, or `supabase db push`). They create the tables, indexes, constraints, RLS and the queue functions, and seed one settings row.
+- **In the app:** use *Add company* (name + domain, with optional auto-detected sources), *Upload CSV*, or *Remove* (sets `is_active = false`). Restore from Settings.
+- **In Supabase (Table Editor or SQL):**
+  ```sql
+  -- add: picked up and researched within ~10 minutes (pg_cron) or at the next daily cron
+  insert into companies (name, domain, github_org, job_board_provider, job_board_slug)
+  values ('Linear', 'linear.app', 'linear', 'ashby', 'linear');
 
-Tables: `companies`, `research_jobs`, `research_batches`, `research_sources`, `research_findings`, `research_reports`, `research_snapshots`, `app_settings`, `http_cache`.
-
-### 4. Run locally
-```bash
-npm install
-npm run dev        # http://localhost:3100
-```
-Locally, research runs in the background of the dev server after each action. The weekly schedule needs the deployed URL (step 6).
-
-### 5. Deploy to Vercel
-1. Push the repo to GitHub, then import it in Vercel (framework: Next.js).
-2. Add all the environment variables above (Production + Preview).
-3. Deploy. `vercel.json` sets the function region (`bom1`), `maxDuration: 300` for API routes, and the weekly Vercel Cron.
-
-### 6. Turn on the weekly refresh
-1. Open `supabase/scheduler.sql`, replace `https://YOUR-APP.vercel.app` and `YOUR_CRON_SECRET`, then run it in the Supabase SQL editor. It enables `pg_cron` and `pg_net`, stores both values in Vault, and schedules the job.
-2. Check it's working:
-   ```sql
-   select jobname, schedule, active from cron.job;
-   select status_code, content, created from net._http_response order by created desc limit 5;
-   ```
-   You should see `200` responses like `{"mode":"refresh","queuedNow":0,"pendingJobs":0}`. **Settings → Weekly automatic refresh** shows the last scheduler run.
-3. Manual trigger:
-   ```bash
-   curl -H "Authorization: Bearer $CRON_SECRET" https://YOUR-APP.vercel.app/api/cron/refresh
-   ```
-   To force a company to be due, run `update companies set next_refresh_at = now() where name = 'X';` and call the endpoint.
+  -- remove from the watchlist (keeps history)
+  update companies set is_active = false where domain = 'linear.app';
+  -- …or delete it and all its snapshots
+  delete from companies where domain = 'linear.app';
+  ```
+  Only `name` and `domain` are required. Every other field is optional and is auto-discovered and saved back when possible.
 
 ## Testing
-```bash
-npm test               # 40 unit + integration tests (catalog, CSV, confidence, diff, AI validation, GitHub collector with mocked API)
-npm run typecheck
-npm run build && npm run check:bundle   # fails if any secret name/value/pattern appears in client JS
-npx tsx scripts/smoke-github.ts "HashiCorp" hashicorp.com hashicorp 3   # live run of the collectors (no DB / AI)
-```
-`samples/sprint-20-companies.csv` is a ready-made 20-company list for testing bulk upload.
 
-## Assumptions and limitations
-- **Product context:** Nikhil's product isn't named in the brief, so Settings ships with a plausible example ("FlowPilot": CI acceleration, preview environments, service catalog). Replace it there; Gemini uses it for relevance and outreach.
-- **Developer talks** aren't collected: there's no reliable public API, and the brief rules out fragile scraping. Every report lists this.
-- **Job postings** are read only from Greenhouse, Lever and Ashby public APIs. Other ATSs need a different integration. A guessed board is used only when the board name or postings name the company.
-- **Blogs:** only RSS/Atom feeds are read (auto-discovered via `<link rel="alternate">`, or a URL you supply). Some sites block automated requests, and the report says so when that happens.
-- **GitHub identification:** a name match is never treated as confirmed. It's labelled *unconfirmed*, the confidence level is capped, and the outreach line is flagged "verify before sending" until you confirm the org.
-- **Throughput:** each serverless invocation starts up to 4 jobs (each capped at 240 s, so it always finishes inside the 300 s function limit), then chains another invocation. The dashboard shows *measured* average research time per company and promises no fixed duration.
-- **Auth:** single-user app. Enable Basic Auth for a public deployment. The database is not reachable from the browser (RLS on, no anon policies).
+```bash
+npm test             # 50 unit/integration tests: dictionary, DNS mapping, TXT/SPF parsing, crt.sh, HN, RSS,
+                     # job tech extraction, GitHub collector (mocked API), scoring, confidence, change tracking,
+                     # Gemini quota parsing, AI-output validation, CSV import/export
+npm run typecheck
+npm run build && npm run check:bundle      # fails if any secret appears in client JS
+npx tsx --conditions=react-server --env-file=.env.local scripts/smoke-collectors.ts Stripe stripe.com stripe greenhouse stripe
+npx tsx --conditions=react-server --env-file=.env.local scripts/smoke-web.ts Stripe stripe.com
+npx tsx scripts/verify-seed.ts             # checks every seed GitHub org + job board returns data
+```
+
+## Known limitations
+
+- **Public data only.** Private repos and internal systems are invisible, and every brief says so. Code-based findings describe open-source work, which can differ from the product stack.
+- **Rate limits.**
+  - **GitHub:** 5,000 requests/h with a token, about 40–60 per company, with ETag caching. Code Search (10 requests/min) isn't used; recursive tree listings give the same file-level signals without that limit.
+  - **Gemini free tier:** about 20 requests/day *per model*. With 2 calls per company, a full first refresh of 20+ companies can span two days. Jobs pause and resume automatically. Enable billing on the AI Studio project to remove this.
+- **crt.sh** is often slow or down. It has a 25 s timeout, and a failure only marks that source as *error*.
+- **Job boards:** only Greenhouse, Lever and Ashby have public APIs. Workday, iCIMS and in-house careers sites aren't read.
+- **Blogs:** only RSS/Atom. Some sites block automated requests (reported as such).
+- **Web research** is supplemental and weak evidence. Citation links are Google grounding redirect URLs.
+- **GitHub identification:** a name-only match is labelled *unconfirmed*, which caps confidence and flags the outreach line "verify before sending".
+- **Single user:** one password gate, no per-user accounts.

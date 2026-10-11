@@ -123,7 +123,9 @@ export async function processQueue({
       break;
     }
     if (deadline - Date.now() < JOB_TIMEOUT_MS) {
-      result.stoppedReason = "time budget reached";
+      // Only report (and chain another invocation for) remaining work if there is any.
+      const { count } = await db().from("research_jobs").select("id", { count: "exact", head: true }).eq("status", "queued").lte("run_after", new Date().toISOString());
+      result.stoppedReason = count ? "time budget reached" : "queue empty";
       break;
     }
     const slots = concurrency - running.size;

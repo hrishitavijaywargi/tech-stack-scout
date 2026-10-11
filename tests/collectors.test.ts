@@ -106,6 +106,22 @@ describe("GitHub collection (REST path, mocked API)", () => {
     expect(col.activity.new_repos_90d.map((r) => r.name)).toEqual(["acme/new-svc"]);
   });
 
+  it("caps a single vendored codebase so it can't dominate the language mix", () => {
+    const repo = (langs: [string, number][]) => ({ languages: langs.map(([name, size]) => ({ name, size, color: null })) }) as never;
+    const l = aggregateLanguages([
+      repo([["C", 140_000_000]]), // vendored Postgres
+      repo([["Python", 1_200_000]]),
+      repo([["Python", 1_200_000]]),
+      repo([["Python", 1_200_000]]),
+      repo([["TypeScript", 1_000_000]]),
+      repo([["TypeScript", 900_000]]),
+      repo([["Rust", 800_000]]),
+    ]);
+    expect(l[0].name).toBe("Python");
+    expect(l.find((x) => x.name === "C")!.pct).toBeLessThan(40);
+    expect(l.find((x) => x.name === "C")!.bytes).toBe(140_000_000); // raw bytes still reported
+  });
+
   it("aggregates language percentages", () => {
     const l = aggregateLanguages([
       { languages: [{ name: "Go", size: 75, color: null }] },

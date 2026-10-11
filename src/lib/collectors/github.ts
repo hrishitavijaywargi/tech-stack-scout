@@ -431,20 +431,31 @@ function pickRepos(active: GhRepo[], max: number) {
   return picked;
 }
 
+/**
+ * Language mix by code bytes across repositories. Each repository's weight is capped at 2× the
+ * median repository size, so one vendored codebase (e.g. a copy of Postgres) can't make the
+ * whole org look like a C shop. `bytes` reports the raw totals; `pct` uses the capped weights.
+ */
 export function aggregateLanguages(repos: GhRepo[]): LanguageShare[] {
-  const totals = new Map<string, { bytes: number; repos: number; color: string | null }>();
+  const sizes = repos.map((r) => (r.languages ?? []).reduce((s, l) => s + l.size, 0)).filter((n) => n > 0).sort((a, b) => a - b);
+  const median = sizes.length ? sizes[Math.floor(sizes.length / 2)] : 0;
+  const cap = median * 2;
+  const totals = new Map<string, { bytes: number; weight: number; repos: number; color: string | null }>();
   for (const r of repos) {
+    const repoBytes = (r.languages ?? []).reduce((s, l) => s + l.size, 0);
+    const scale = cap > 0 && repoBytes > cap ? cap / repoBytes : 1;
     for (const l of r.languages ?? []) {
-      const cur = totals.get(l.name) ?? { bytes: 0, repos: 0, color: l.color ?? techByName(l.name)?.color ?? null };
+      const cur = totals.get(l.name) ?? { bytes: 0, weight: 0, repos: 0, color: l.color ?? techByName(l.name)?.color ?? null };
       cur.bytes += l.size;
+      cur.weight += l.size * scale;
       cur.repos += 1;
       totals.set(l.name, cur);
     }
   }
-  const sum = [...totals.values()].reduce((s, l) => s + l.bytes, 0);
+  const sum = [...totals.values()].reduce((s, l) => s + l.weight, 0);
   return [...totals.entries()]
-    .map(([name, l]) => ({ name, bytes: l.bytes, pct: sum ? Math.round((l.bytes / sum) * 1000) / 10 : 0, repos: l.repos, color: l.color }))
-    .sort((a, b) => b.bytes - a.bytes);
+    .map(([name, l]) => ({ name, bytes: l.bytes, pct: sum ? Math.round((l.weight / sum) * 1000) / 10 : 0, repos: l.repos, color: l.color }))
+    .sort((a, b) => b.pct - a.pct);
 }
 
 export function activityLevel(a: Pick<Activity, "repos_listed" | "repos_active_30d" | "repos_active_90d" | "commits_90d" | "last_push_at">, now = Date.now()): { level: ActivityLevel; reason: string } {

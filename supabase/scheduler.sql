@@ -20,7 +20,7 @@ select cron.schedule(
   '*/10 * * * *',
   $$
   select net.http_get(
-    url := (select decrypted_secret from vault.decrypted_secrets where name = 'tss_app_url') || '/api/cron/refresh',
+    url := (select decrypted_secret from vault.decrypted_secrets where name = 'tss_app_url') || '/api/cron/refresh?source=pg_cron',
     headers := jsonb_build_object(
       'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'tss_cron_secret')
     ),
