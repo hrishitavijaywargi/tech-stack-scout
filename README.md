@@ -4,7 +4,7 @@ AI-powered tech-stack intelligence for a B2B sales rep (MESA C4 · Problem State
 
 Nikhil sells a developer-productivity tool to engineering teams. Before every call he needs to know how the target company builds software: its languages, its cloud and infrastructure tooling, and how actively it ships. Tech Stack Scout keeps his **Supabase watchlist** current automatically. Every week it collects **live public evidence** from 7 sources, scores activity and product fit **in code**, and asks **Gemini Flash** for a two-paragraph engineering summary, three talking points and a specific, non-generic outreach opening line. Every claim links back to its source.
 
-**Live app:** https://tech-stack-scout-kappa.vercel.app · **Demo password:** `scout-demo-2026`
+**Live app:** https://tech-stack-scout-kappa.vercel.app (public — no login required)
 **Repo:** https://github.com/hrishitavijaywargi/tech-stack-scout · **Components Map:** [COMPONENTS_MAP.md](COMPONENTS_MAP.md)
 
 ---
@@ -142,7 +142,7 @@ Models are configurable: `GEMINI_MODEL` (default `gemini-3.6-flash`) and `GEMINI
    | `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL` | Default `gemini-3.6-flash` / `gemini-3.8-flash` |
    | `WEB_RESEARCH_ENABLED` | `true` (adds one Gemini call per company) |
    | `CRON_SECRET` | Protects `/api/cron/refresh` |
-   | `APP_PASSWORD` | Password gate (httpOnly cookie). Demo: `scout-demo-2026` |
+   | `APP_PASSWORD` | Optional password gate (httpOnly cookie). **Not set on the live app** — leave blank for open access |
 3. **Run locally:** `npm install && npm run dev` → http://localhost:3100
 4. **Deploy:** import the GitHub repo in Vercel and add the env vars. `vercel.json` sets region `bom1`, `maxDuration: 300`, and two crons:
    - `/api/cron/refresh?source=vercel-weekly` at `0 6 * * 1` (weekly, Monday 06:00 UTC)
@@ -190,4 +190,4 @@ npx tsx scripts/verify-seed.ts             # checks every seed GitHub org + job 
 - **Blogs:** only RSS/Atom. Some sites block automated requests (reported as such).
 - **Web research** is supplemental and weak evidence. Citation links are Google grounding redirect URLs.
 - **GitHub identification:** a name-only match is labelled *unconfirmed*, which caps confidence and flags the outreach line "verify before sending".
-- **Single user:** one password gate, no per-user accounts.
+- **Open access:** the live app has no login (single-user tool). Setting `APP_PASSWORD` turns on an optional password gate.

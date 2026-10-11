@@ -37,7 +37,7 @@ flowchart TD
 | Company brief `src/app/company/[id]/page.tsx` | Pre-call brief: summary, outreach card, talking points, scores, charts, infra by category with evidence, hiring, signals, DNS/CT, history, source status | Latest `company_snapshots` + `company_insights`, snapshot history | Copyable outreach line, source edits, refresh | `Charts.tsx` (Recharts), `CompanyDetailsForm.tsx`, `lib/data.ts` |
 | Settings `src/app/settings/page.tsx` | Product profile editor, refresh run history, "Refresh all stale now", preferences, removed companies, API status | `product_profile`, `app_settings`, `refresh_runs`, `/api/health` | Profile and settings updates | `SettingsForm.tsx`, `lib/health.ts` |
 | Research activity `src/app/activity/page.tsx` | Job-level status, attempts, durations, explained errors, retry | `research_jobs`, `research_batches` | Retry actions | `ResearchActions.tsx` |
-| Login `src/app/login/page.tsx` + `src/middleware.ts` | Password gate (`APP_PASSWORD`, httpOnly HMAC cookie) | Password | Session cookie | `lib/auth.ts` |
+| Login `src/app/login/page.tsx` + `src/middleware.ts` | Optional password gate — only active when `APP_PASSWORD` is set (off on the live app) | Password | Session cookie | `lib/auth.ts` |
 | Live progress `LiveProgress.tsx` | Polls the queue and shows "x of N researched", refreshing the page on change | `/api/jobs/progress` | — | — |
 
 ## API routes

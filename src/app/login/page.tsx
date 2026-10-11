@@ -38,7 +38,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <button type="submit" className="mt-4 h-10 w-full rounded-lg bg-indigo-600 text-sm font-medium text-white shadow-sm hover:bg-indigo-700">
           Sign in
         </button>
-        <p className="mt-3 text-center text-xs text-slate-500">The demo password is in the project README.</p>
+        <p className="mt-3 text-center text-xs text-slate-500">Password protection is enabled by the APP_PASSWORD setting.</p>
       </form>
     </div>
   );
