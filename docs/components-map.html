@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Tech Stack Scout — Components Map</title>
+<style>
+  @page { size: A4; margin: 14mm 13mm 14mm 13mm; }
+  :root { --ink:#0f1220; --muted:#5b6178; --line:#e2e4ee; --soft:#f5f5fb; --violet:#7c3aed; --violet-soft:#efe9fe; --green:#059669; --amber:#b45309; }
+  * { box-sizing: border-box; }
+  body { font-family: "Segoe UI", Inter, Arial, sans-serif; color: var(--ink); font-size: 9.6pt; line-height: 1.42; margin: 0; }
+  h1 { font-size: 22pt; margin: 0; letter-spacing: -0.02em; }
+  h2 { font-size: 13pt; margin: 18px 0 6px; padding-bottom: 4px; border-bottom: 2px solid var(--violet); break-after: avoid; }
+  h3 { font-size: 10.5pt; margin: 12px 0 4px; color: var(--violet); break-after: avoid; }
+  p { margin: 4px 0; }
+  .muted { color: var(--muted); }
+  .cover { border-radius: 14px; padding: 18px 20px; background: linear-gradient(135deg, #1b1533, #2b1d5c 60%, #4c1d95); color: #fff; }
+  .cover .sub { color: #d9ccff; margin-top: 4px; font-size: 10.5pt; }
+  .cover .links { margin-top: 10px; font-size: 9pt; color: #ece6ff; }
+  .cover .links b { color: #fff; }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 999px; background: var(--violet-soft); color: #5b21b6; font-size: 8pt; font-weight: 600; margin-right: 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 6px 0 4px; font-size: 8.6pt; break-inside: auto; }
+  th { text-align: left; background: var(--soft); color: #3b3f55; font-weight: 600; padding: 5px 6px; border-bottom: 1px solid var(--line); }
+  td { padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr { break-inside: avoid; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 8pt; background: var(--soft); padding: 0 3px; border-radius: 3px; }
+  .flow { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin: 10px 0 4px; }
+  .stage { border: 1px solid var(--line); border-radius: 10px; padding: 8px; background: #fff; position: relative; }
+  .stage .n { font-size: 7.5pt; font-weight: 700; color: var(--violet); letter-spacing: .06em; }
+  .stage .t { font-weight: 700; font-size: 10pt; margin: 1px 0 4px; }
+  .stage ul { margin: 0; padding-left: 13px; font-size: 8pt; color: #33384f; }
+  .stage:not(:last-child)::after { content: "➜"; position: absolute; right: -9px; top: 42%; color: var(--violet); font-size: 10pt; }
+  .callout { border-left: 3px solid var(--violet); background: var(--soft); padding: 6px 10px; border-radius: 0 8px 8px 0; margin: 8px 0; font-size: 9pt; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .box { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; break-inside: avoid; }
+  .page-break { break-before: page; }
+  svg text { font-family: "Segoe UI", Arial, sans-serif; }
+  footer { margin-top: 14px; font-size: 8pt; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>Tech Stack Scout — Components Map</h1>
+  <div class="sub">AI-powered tech-stack intelligence for Nikhil's target-account watchlist · MESA C4, Problem Statement 5</div>
+  <div class="links">
+    <b>Live app:</b> https://tech-stack-scout-kappa.vercel.app &nbsp;·&nbsp;
+    <b>Repo:</b> https://github.com/hrishitavijaywargi/tech-stack-scout<br />
+    <b>Stack:</b> Next.js (TypeScript, Tailwind, Recharts) on Vercel · Supabase Postgres · Gemini Flash via <code style="background:#ffffff22;color:#fff">@google/genai</code> · 7 live public data sources
+  </div>
+</div>
+
+<h2>The pipeline at a glance</h2>
+<div class="flow">
+  <div class="stage"><div class="n">1 · TRIGGER</div><div class="t">When</div><ul><li>Vercel Cron weekly, Mon 06:00 UTC</li><li>Vercel Cron daily stale sweep</li><li>Supabase pg_cron, 10 min</li><li>Add / CSV / Refresh now</li></ul></div>
+  <div class="stage"><div class="n">2 · INPUT</div><div class="t">What</div><ul><li><code>companies</code> watchlist row</li><li>GitHub, job boards</li><li>DNS, crt.sh</li><li>HN, blog RSS, web search</li></ul></div>
+  <div class="stage"><div class="n">3 · CONTEXT</div><div class="t">Knows</div><ul><li>Product profile</li><li>Previous snapshot</li><li>Tech dictionary (~185)</li><li>First-observed dates</li></ul></div>
+  <div class="stage"><div class="n">4 · PROCESSING</div><div class="t">Deterministic</div><ul><li>Detect &amp; aggregate stack</li><li>Per-tech confidence</li><li>Activity &amp; fit scores</li><li>Snapshot diff</li></ul></div>
+  <div class="stage"><div class="n">5 · AI</div><div class="t">Gemini Flash</div><ul><li>2-paragraph summary</li><li>Outreach line (&lt;35 words)</li><li>3 talking points</li><li>Grounded web research</li></ul></div>
+  <div class="stage"><div class="n">6 · OUTPUT</div><div class="t">Delivered</div><ul><li>Snapshot + insight rows</li><li>Account cards &amp; brief</li><li>What's changed</li><li>CSV export</li></ul></div>
+</div>
+<div class="callout"><b>Design rule:</b> code decides the facts (which technologies, which scores, what changed); Gemini only writes prose from an ID'd evidence pack, and its answer is validated against that evidence before it is saved. Nothing is invented — missing data is shown as "Not publicly found".</div>
+
+<h2>Data flow</h2>
+<svg viewBox="0 0 760 330" width="100%" role="img" aria-label="Data flow diagram">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
+    <style>
+      .b{fill:#fff;stroke:#d6d3f0;stroke-width:1.2;rx:10}
+      .db{fill:#f2edff;stroke:#a78bfa;stroke-width:1.2}
+      .ai{fill:#ede5ff;stroke:#7c3aed;stroke-width:1.6}
+      .t{font-size:11px;font-weight:600;fill:#0f1220}
+      .s{font-size:9px;fill:#5b6178}
+      .l{stroke:#7c3aed;stroke-width:1.4;fill:none;marker-end:url(#a)}
+    </style>
+  </defs>
+  <!-- triggers -->
+  <rect class="b" x="10" y="10" width="150" height="74" rx="10"/><text class="t" x="20" y="30">Triggers</text>
+  <text class="s" x="20" y="46">Vercel Cron · weekly / daily</text><text class="s" x="20" y="59">Supabase pg_cron · 10 min</text><text class="s" x="20" y="72">UI: add · CSV · refresh</text>
+  <!-- watchlist -->
+  <rect class="db" x="10" y="120" width="150" height="56" rx="10"/><text class="t" x="20" y="142">companies</text><text class="s" x="20" y="158">Supabase watchlist (is_active)</text>
+  <!-- cron endpoint -->
+  <rect class="b" x="200" y="10" width="160" height="74" rx="10"/><text class="t" x="210" y="30">/api/cron/refresh</text>
+  <text class="s" x="210" y="46">Bearer CRON_SECRET</text><text class="s" x="210" y="59">enqueue_due_refreshes()</text><text class="s" x="210" y="72">→ research_jobs queue</text>
+  <!-- queue -->
+  <rect class="db" x="200" y="120" width="160" height="56" rx="10"/><text class="t" x="210" y="142">research_jobs</text><text class="s" x="210" y="158">claim · SKIP LOCKED · 4 at a time</text>
+  <!-- pipeline -->
+  <rect class="b" x="400" y="10" width="170" height="166" rx="10"/><text class="t" x="410" y="30">Collectors (parallel)</text>
+  <text class="s" x="410" y="48">GitHub GraphQL + REST</text><text class="s" x="410" y="62">Greenhouse · Lever · Ashby</text><text class="s" x="410" y="76">Google DNS-over-HTTPS</text>
+  <text class="s" x="410" y="90">crt.sh certificate logs</text><text class="s" x="410" y="104">Hacker News (Algolia)</text><text class="s" x="410" y="118">Blog RSS (rss-parser)</text>
+  <text class="s" x="410" y="132">Gemini + Google Search</text><text class="s" x="410" y="152">A failing source never fails</text><text class="s" x="410" y="164">the company → source_status</text>
+  <!-- scoring -->
+  <rect class="b" x="605" y="10" width="145" height="74" rx="10"/><text class="t" x="615" y="30">Scoring (code)</text>
+  <text class="s" x="615" y="46">stack + confidence</text><text class="s" x="615" y="59">activity_score · fit_score</text><text class="s" x="615" y="72">← product_profile</text>
+  <!-- gemini -->
+  <rect class="ai" x="605" y="120" width="145" height="56" rx="10"/><text class="t" x="615" y="142">Gemini Flash</text><text class="s" x="615" y="158">JSON schema → Zod + evidence</text>
+  <!-- outputs -->
+  <rect class="db" x="400" y="230" width="170" height="74" rx="10"/><text class="t" x="410" y="250">company_snapshots</text><text class="t" x="410" y="266">company_insights</text><text class="s" x="410" y="284">+ refresh_runs · diff vs previous</text>
+  <rect class="db" x="200" y="230" width="160" height="74" rx="10"/><text class="t" x="210" y="250">latest_company_state</text><text class="s" x="210" y="266">view: company + latest</text><text class="s" x="210" y="279">snapshot + insight</text>
+  <rect class="ai" x="10" y="230" width="150" height="74" rx="10"/><text class="t" x="20" y="250">Dashboard</text><text class="s" x="20" y="266">Account cards · call-sheet</text><text class="s" x="20" y="279">brief · Settings · Activity</text><text class="s" x="20" y="292">CSV export</text>
+  <!-- arrows -->
+  <path class="l" d="M160 47 H198"/>
+  <path class="l" d="M160 148 H198"/>
+  <path class="l" d="M280 84 V118"/>
+  <path class="l" d="M360 148 H398"/>
+  <path class="l" d="M570 47 H603"/>
+  <path class="l" d="M677 84 V118"/>
+  <path class="l" d="M640 176 C 640 215, 600 255, 572 262"/>
+  <path class="l" d="M400 267 H362"/>
+  <path class="l" d="M200 267 H162"/>
+</svg>
+
+<div class="page-break"></div>
+<h2>1 · Trigger</h2>
+<table>
+  <tr><th>Component</th><th>Implementation</th><th>Notes</th></tr>
+  <tr><td>Weekly refresh</td><td>Vercel Cron <code>0 6 * * 1</code> → <code>/api/cron/refresh?source=vercel-weekly</code></td><td>The freshness guarantee: every active company is re-researched 7 days after its last snapshot.</td></tr>
+  <tr><td>Daily stale sweep</td><td>Vercel Cron <code>0 7 * * *</code> → <code>?source=vercel-daily</code></td><td>Drains anything older than 7 days so the queue always empties.</td></tr>
+  <tr><td>Supabase scheduler</td><td>pg_cron <code>*/10 * * * *</code> → same endpoint (URL + secret in Vault)</td><td>Picks up rows added directly in Supabase within 10 min; retries; chained batches.</td></tr>
+  <tr><td>Manual</td><td>Add company · Upload CSV · Refresh now · Research all · Refresh all stale</td><td>Same queue and pipeline as scheduled runs. Idempotent: one active job per company.</td></tr>
+  <tr><td>Security</td><td><code>Authorization: Bearer CRON_SECRET</code>, constant-time compare</td><td>Vercel Cron sends the header automatically.</td></tr>
+</table>
+
+<h2>2 · Input</h2>
+<table>
+  <tr><th>Source</th><th>Collector</th><th>What it contributes</th></tr>
+  <tr><td>Watchlist</td><td><code>companies</code> table</td><td>name, domain (required); optional github_org, job board provider/slug, blog_rss_url, notes, is_active. Edited in the UI or Supabase — no code.</td></tr>
+  <tr><td>GitHub</td><td><code>collectors/github.ts</code></td><td>GraphQL: ≤300 non-fork repos with languages in 3 calls; all-time vs recent (180 d) language mix. REST: 52-week commit stats (202 retry), contributors, releases, file trees (Docker, k8s, Helm, Terraform, CI, proto), manifests, workflow contents, Terraform providers, Serverless provider. Microservices heuristic.</td></tr>
+  <tr><td>Job boards</td><td><code>collectors/jobs.ts</code></td><td>Greenhouse / Lever / Ashby public APIs; auto-discovered board saved back; engineering roles; per-technology posting counts; 5 most relevant roles; hiring trend.</td></tr>
+  <tr><td>DNS</td><td><code>collectors/dns.ts</code></td><td>Google DNS-over-HTTPS: CNAME/NS → hosting/CDN, MX → email provider, TXT → ~45 SaaS verification records, SPF includes.</td></tr>
+  <tr><td>Certificates</td><td><code>collectors/crtsh.ts</code></td><td>crt.sh: unexpired subdomains, tooling flags (grafana, jenkins, argocd, k8s, jira…). 25 s timeout, one retry.</td></tr>
+  <tr><td>Hacker News</td><td><code>collectors/hn.ts</code></td><td>Last-12-month engineering stories on the company domain or naming it; top 5 by points.</td></tr>
+  <tr><td>Engineering blog</td><td><code>collectors/rss.ts</code></td><td>Saved or auto-discovered RSS/Atom feed (saved back); 5 latest posts, technical flag.</td></tr>
+  <tr><td>Web research</td><td><code>collectors/webResearch.ts</code></td><td>Gemini + Google Search grounding: talks, migrations, announcements; URLs taken from grounding metadata only. Weak, supplemental evidence.</td></tr>
+</table>
+
+<h2>3 · Context</h2>
+<table>
+  <tr><th>Context</th><th>Where</th><th>Used for</th></tr>
+  <tr><td>Product profile</td><td><code>product_profile</code> (Settings page)</td><td>Fit score targets (languages, clouds, signals) and outreach relevance.</td></tr>
+  <tr><td>Tech dictionary</td><td><code>src/lib/techDictionary.ts</code></td><td>~185 technologies: category, aliases (golang→Go, GCP→Google Cloud, k8s→Kubernetes), path / dependency / text patterns. Shared by every collector and the UI.</td></tr>
+  <tr><td>Previous snapshot</td><td><code>company_snapshots</code></td><td>What's changed diff, hiring and activity trends.</td></tr>
+  <tr><td>Evidence history</td><td><code>research_sources</code>, <code>research_findings</code></td><td>Every source URL and finding with first/last observed dates.</td></tr>
+  <tr><td>Preferences</td><td><code>app_settings</code></td><td>Refresh interval, repos scanned in depth, optional sources.</td></tr>
+</table>
+
+<h2>4 · Processing (deterministic, in code)</h2>
+<table>
+  <tr><th>Step</th><th>Module</th><th>Detail</th></tr>
+  <tr><td>Queue</td><td><code>lib/jobs/queue.ts</code></td><td>Atomic claim (FOR UPDATE SKIP LOCKED), 4 concurrent, 240 s per job inside a 300 s function, exponential-backoff retries, rate-limit pause for the whole queue, <code>refresh_runs</code> bookkeeping.</td></tr>
+  <tr><td>Pipeline</td><td><code>lib/research/pipeline.ts</code></td><td>Collect (parallel) → store sources/findings → stack → scores → Gemini → snapshot + insight + diff. One pipeline for manual, bulk and scheduled runs.</td></tr>
+  <tr><td>Stack + confidence</td><td><code>lib/research/analysis.ts</code></td><td>One entry per technology with IDs F1…; <b>high</b> = 2+ independent source families, <b>medium</b> = public code/config or 3+ postings, <b>low</b> = single weak signal.</td></tr>
+  <tr><td>Activity score</td><td><code>lib/scoring.ts</code></td><td>Log-scaled: commits 90 d ×30, repos active 30 d ×15, 90 d ×10, contributors ×15, releases 90 d ×15, eng roles ×15.</td></tr>
+  <tr><td>Fit score</td><td><code>lib/scoring.ts</code></td><td>Target languages ×40 (share of recent code, full at 60%), target clouds ×30 (by confidence), target signals ×30 (full at 5). Breakdown shown in the UI.</td></tr>
+  <tr><td>Language mix</td><td><code>collectors/github.ts</code></td><td>By code bytes, each repo capped at 2× the median repo size so a vendored codebase can't dominate.</td></tr>
+  <tr><td>Change tracking</td><td><code>diffSnapshots</code></td><td>Newly observed (≠ newly adopted), not re-observed (≠ stopped using), new postings, hiring change, releases, new repos, language shifts, activity level.</td></tr>
+</table>
+
+<div class="page-break"></div>
+<h2>5 · AI (constrained) — Gemini Flash only</h2>
+<table>
+  <tr><th>Job</th><th>How</th><th>Guardrails</th></tr>
+  <tr><td>Evidence pack</td><td><code>lib/ai/report.ts</code></td><td>Compact ID'd facts (F tech, M activity, R releases, H/J hiring, D DNS, S subdomains, A articles, W web) + scores + product profile. Never raw API dumps.</td></tr>
+  <tr><td>Insight</td><td><code>@google/genai</code>, JSON <code>responseSchema</code></td><td>Two-paragraph summary, outreach line (&lt;35 words) + rationale, 3 talking points with evidence IDs, observation/hypothesis statements.</td></tr>
+  <tr><td>Validation</td><td>Zod + evidence checks</td><td>Cited IDs must exist; no technologies outside the evidence; no brackets/placeholders, banned phrases or "you have a problem" claims; the line must name a cited detail. Up to 3 attempts with corrective feedback.</td></tr>
+  <tr><td>Web research</td><td><code>googleSearch</code> grounding tool</td><td>Finding URLs come from groundingSupports → groundingChunks; ungrounded lines dropped.</td></tr>
+  <tr><td>Models &amp; limits</td><td><code>GEMINI_MODEL</code> / <code>GEMINI_FALLBACK_MODEL</code></td><td>gemini-3.6-flash primary, gemini-3.8-flash fallback on 429/5xx; daily-quota errors pause the queue until reset.</td></tr>
+  <tr><td>No evidence</td><td>Deterministic brief</td><td>Gemini is not called; the brief says "insufficient public evidence" and lists next research steps.</td></tr>
+</table>
+
+<h2>6 · Output</h2>
+<table>
+  <tr><th>Output</th><th>Where</th><th>Contents</th></tr>
+  <tr><td>Accounts</td><td><code>/</code></td><td>Account cards: logo, fit &amp; activity rings, languages, cloud, eng roles + trend, opener with copy, "new reason to reach out" ribbon; hottest-first sort; card/table views; last run &amp; next schedule.</td></tr>
+  <tr><td>Call sheet</td><td><code>/company/[id]</code></td><td>Sticky header with scores and Copy opener; opener, talking points, summary; stack at a glance; what's changed; tabs for code &amp; activity, hiring, infra, signals, DNS &amp; certs, history, sources &amp; confidence.</td></tr>
+  <tr><td>Settings</td><td><code>/settings</code></td><td>Product profile editor, refresh run history, refresh-all-stale, preferences, removed companies, API connection status.</td></tr>
+  <tr><td>Activity</td><td><code>/activity</code></td><td>Per-job status, attempts, durations, explained errors, retry.</td></tr>
+  <tr><td>Export</td><td><code>/api/export</code></td><td>CSV of every company's latest state (formula-escaped).</td></tr>
+</table>
+
+<h2>Supabase objects</h2>
+<table>
+  <tr><th>Object</th><th>Responsibility</th></tr>
+  <tr><td><code>companies</code></td><td>The watchlist (domain unique; is_active = on the watchlist).</td></tr>
+  <tr><td><code>company_snapshots</code></td><td>One row per refresh: languages, recent_languages, infra_signals, activity, hiring, dns, subdomains, hn_stories, blog_posts, web_research, scores + breakdowns, source_status, evidence pack, changes.</td></tr>
+  <tr><td><code>company_insights</code></td><td>Gemini output per snapshot: summary, outreach_line, outreach_rationale, talking_points, model.</td></tr>
+  <tr><td><code>product_profile</code></td><td>Single row driving fit and outreach.</td></tr>
+  <tr><td><code>refresh_runs</code></td><td>Trigger, source, status, processed, errors per processing run.</td></tr>
+  <tr><td><code>research_jobs</code> / <code>research_batches</code></td><td>Idempotent queue and bulk progress.</td></tr>
+  <tr><td><code>research_sources</code> / <code>research_findings</code></td><td>Evidence store with first/last observed.</td></tr>
+  <tr><td><code>latest_company_state</code> (view)</td><td>Active company + latest snapshot + insight.</td></tr>
+  <tr><td>Functions</td><td><code>enqueue_research</code>, <code>enqueue_due_refreshes</code>, <code>claim_research_jobs</code> (service role only). RLS on every table; the browser never reads the database.</td></tr>
+</table>
+
+<h2>API routes</h2>
+<table>
+  <tr><th>Route</th><th>Responsibility</th></tr>
+  <tr><td><code>GET /api/cron/refresh</code></td><td>Scheduler entry: queue due companies, drain queue in background.</td></tr>
+  <tr><td><code>POST /api/companies</code> · <code>/import</code></td><td>Add one / bulk CSV (re-validated) and queue research.</td></tr>
+  <tr><td><code>PATCH/DELETE /api/companies/[id]</code></td><td>Edit sources, deactivate/restore, delete.</td></tr>
+  <tr><td><code>POST /api/companies/[id]/refresh</code></td><td>Refresh now.</td></tr>
+  <tr><td><code>POST /api/companies/detect</code></td><td>Auto-detect GitHub org, job board and blog feed.</td></tr>
+  <tr><td><code>POST /api/research</code></td><td>Research all / stale / needs attention.</td></tr>
+  <tr><td><code>/api/jobs/progress</code> · <code>/retry</code></td><td>Live progress; retry failed job.</td></tr>
+  <tr><td><code>/api/product-profile</code> · <code>/api/settings</code></td><td>Read/update profile and preferences.</td></tr>
+  <tr><td><code>/api/export</code> · <code>/api/health</code></td><td>CSV export; connection status (no secrets).</td></tr>
+</table>
+
+<footer>Tech Stack Scout · Components Map · generated from the repository (COMPONENTS_MAP.md) · Gemini Flash is the only AI model used.</footer>
+</body>
+</html>
