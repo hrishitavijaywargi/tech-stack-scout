@@ -16,6 +16,7 @@ export default {
       },
       colors: {
         surface: "rgb(var(--surface) / <alpha-value>)",
+        "surface-2": "rgb(var(--surface-2) / <alpha-value>)",
         slate: scale("slate", STEPS),
         indigo: scale("indigo", STEPS),
         emerald: scale("emerald", STEPS),

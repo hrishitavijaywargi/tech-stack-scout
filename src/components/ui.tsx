@@ -23,7 +23,7 @@ export function PageHeader({ title, description, actions }: { title: string; des
 
 export function Card({ className, children, ...rest }: ComponentProps<"section">) {
   return (
-    <section className={cx("rounded-xl border border-slate-200 bg-surface shadow-sm", className)} {...rest}>
+    <section className={cx("rounded-2xl border border-slate-200 bg-surface shadow-sm shadow-black/5", className)} {...rest}>
       {children}
     </section>
   );

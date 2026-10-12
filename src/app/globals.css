@@ -2,14 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Light theme (Tailwind default palette values). */
+/*
+ * "Sales cockpit" theme. Colours are CSS variables consumed by tailwind.config.ts, so the whole
+ * UI switches theme by swapping values. The accent scale is named `indigo` in Tailwind but holds
+ * an electric-violet palette.
+ */
+
+/* Light theme */
 :root {
   color-scheme: light;
   --surface: 255 255 255;
-  --slate-50: 248 250 252; --slate-100: 241 245 249; --slate-200: 226 232 240; --slate-300: 203 213 225; --slate-400: 148 163 184;
-  --slate-500: 100 116 139; --slate-600: 71 85 105; --slate-700: 51 65 85; --slate-800: 30 41 59; --slate-900: 15 23 42; --slate-950: 2 6 23;
-  --indigo-50: 238 242 255; --indigo-100: 224 231 255; --indigo-200: 199 210 254; --indigo-300: 165 180 252; --indigo-400: 129 140 248;
-  --indigo-500: 99 102 241; --indigo-600: 79 70 229; --indigo-700: 67 56 202; --indigo-800: 55 48 163; --indigo-900: 49 46 129; --indigo-950: 30 27 75;
+  --surface-2: 248 248 252;
+  --slate-50: 246 247 251; --slate-100: 238 240 246; --slate-200: 224 227 237; --slate-300: 199 204 219; --slate-400: 145 152 175;
+  --slate-500: 104 112 138; --slate-600: 73 80 104; --slate-700: 51 57 79; --slate-800: 31 36 54; --slate-900: 15 18 32; --slate-950: 4 6 15;
+  --indigo-50: 245 243 255; --indigo-100: 237 233 254; --indigo-200: 221 214 254; --indigo-300: 196 181 253; --indigo-400: 167 139 250;
+  --indigo-500: 139 92 246; --indigo-600: 124 58 237; --indigo-700: 109 40 217; --indigo-800: 91 33 182; --indigo-900: 76 29 149; --indigo-950: 46 16 101;
   --emerald-50: 236 253 245; --emerald-100: 209 250 229; --emerald-200: 167 243 208; --emerald-300: 110 231 183; --emerald-400: 52 211 153;
   --emerald-500: 16 185 129; --emerald-600: 5 150 105; --emerald-700: 4 120 87; --emerald-800: 6 95 70; --emerald-900: 6 78 59; --emerald-950: 2 44 34;
   --amber-50: 255 251 235; --amber-100: 254 243 199; --amber-200: 253 230 138; --amber-300: 252 211 77; --amber-400: 251 191 36;
@@ -18,17 +25,19 @@
   --red-500: 239 68 68; --red-600: 220 38 38; --red-700: 185 28 28; --red-800: 153 27 27; --red-900: 127 29 29; --red-950: 69 10 10;
   --sky-50: 240 249 255; --sky-100: 224 242 254; --sky-200: 186 230 253; --sky-300: 125 211 252; --sky-400: 56 189 248;
   --sky-500: 14 165 233; --sky-600: 2 132 199; --sky-700: 3 105 161; --sky-800: 7 89 133; --sky-900: 12 74 110; --sky-950: 8 47 73;
-  --chart-grid: 226 232 240;
+  --chart-grid: 224 227 237;
+  --glow: 124 58 237;
 }
 
-/* Dark theme (class set before paint from the saved choice or the OS preference): slate inverted, tints darkened, accents lightened. */
+/* Dark theme (default; class set before paint from the saved choice) */
 :root.dark {
   color-scheme: dark;
-  --surface: 17 24 39;
-  --slate-50: 9 13 23; --slate-100: 30 41 59; --slate-200: 45 55 72; --slate-300: 71 85 105; --slate-400: 100 116 139;
-  --slate-500: 148 163 184; --slate-600: 186 196 210; --slate-700: 214 222 232; --slate-800: 235 240 246; --slate-900: 245 247 250; --slate-950: 255 255 255;
-  --indigo-50: 30 27 75; --indigo-100: 49 46 129; --indigo-200: 67 56 202; --indigo-300: 129 140 248; --indigo-400: 165 180 252;
-  --indigo-500: 129 140 248; --indigo-600: 99 102 241; --indigo-700: 165 180 252; --indigo-800: 199 210 254; --indigo-900: 224 231 255; --indigo-950: 238 242 255;
+  --surface: 17 20 32;
+  --surface-2: 22 26 41;
+  --slate-50: 9 11 19; --slate-100: 27 31 47; --slate-200: 38 43 63; --slate-300: 56 62 86; --slate-400: 92 99 127;
+  --slate-500: 141 148 173; --slate-600: 181 187 207; --slate-700: 210 214 228; --slate-800: 232 234 242; --slate-900: 245 246 251; --slate-950: 255 255 255;
+  --indigo-50: 31 22 64; --indigo-100: 46 30 98; --indigo-200: 76 45 150; --indigo-300: 109 64 217; --indigo-400: 139 92 246;
+  --indigo-500: 157 117 250; --indigo-600: 139 92 246; --indigo-700: 196 181 253; --indigo-800: 221 214 254; --indigo-900: 237 233 254; --indigo-950: 245 243 255;
   --emerald-50: 6 46 34; --emerald-100: 6 78 59; --emerald-200: 4 120 87; --emerald-300: 5 150 105; --emerald-400: 16 185 129;
   --emerald-500: 16 185 129; --emerald-600: 52 211 153; --emerald-700: 110 231 183; --emerald-800: 167 243 208; --emerald-900: 209 250 229; --emerald-950: 236 253 245;
   --amber-50: 50 34 8; --amber-100: 120 53 15; --amber-200: 146 64 14; --amber-300: 180 83 9; --amber-400: 217 119 6;
@@ -37,10 +46,26 @@
   --red-500: 239 68 68; --red-600: 248 113 113; --red-700: 252 165 165; --red-800: 254 202 202; --red-900: 254 226 226; --red-950: 254 242 242;
   --sky-50: 8 47 73; --sky-100: 12 74 110; --sky-200: 7 89 133; --sky-300: 3 105 161; --sky-400: 2 132 199;
   --sky-500: 14 165 233; --sky-600: 56 189 248; --sky-700: 125 211 252; --sky-800: 186 230 253; --sky-900: 224 242 254; --sky-950: 240 249 255;
-  --chart-grid: 45 55 72;
+  --chart-grid: 38 43 63;
+  --glow: 139 92 246;
 }
 
 body {
   background: rgb(var(--slate-50));
   color: rgb(var(--slate-900));
+}
+
+/* Subtle violet glow behind the app on dark */
+:root.dark body {
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgb(var(--glow) / 0.10), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgb(56 189 248 / 0.05), transparent 60%),
+    rgb(var(--slate-50));
+  background-attachment: fixed;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
 }

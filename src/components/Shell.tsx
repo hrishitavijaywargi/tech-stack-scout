@@ -8,7 +8,7 @@ import { cx } from "@/components/ui";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 const NAV = [
-  { href: "/", label: "Watchlist", icon: ListChecks },
+  { href: "/", label: "Accounts", icon: ListChecks },
   { href: "/activity", label: "Research activity", icon: Activity },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

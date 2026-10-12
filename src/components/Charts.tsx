@@ -42,7 +42,7 @@ export function LanguageDonut({ recent, allTime }: { recent: LanguageShare[]; al
       </div>
       {data.length ? (
         <div className="flex flex-col items-center gap-4 sm:flex-row">
-          <div className="h-44 w-44 shrink-0">
+          <div className="h-36 w-36 shrink-0">
             <ResponsiveContainer>
               <PieChart>
                 <Pie data={data} dataKey="value" nameKey="name" innerRadius="58%" outerRadius="95%" paddingAngle={1} stroke="none" isAnimationActive={false}>
@@ -54,12 +54,12 @@ export function LanguageDonut({ recent, allTime }: { recent: LanguageShare[]; al
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <ul className="w-full space-y-1 text-sm">
+          <ul className="w-full min-w-0 flex-1 space-y-1 text-sm">
             {data.map((d) => (
               <li key={d.name} className="flex items-center justify-between gap-3">
-                <span className="flex items-center gap-2 text-slate-700">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: d.color }} aria-hidden />
-                  {d.name}
+                <span className="flex min-w-0 items-center gap-2 text-slate-700">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: d.color }} aria-hidden />
+                  <span className="truncate">{d.name}</span>
                 </span>
                 <span className="tabular-nums text-slate-500">{d.value}%</span>
               </li>

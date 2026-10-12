@@ -20,6 +20,10 @@ export interface WatchlistRow {
   stale: boolean;
   confidence: "High" | "Medium" | "Low" | null;
   hasOutreach: boolean;
+  outreachLine: string | null;
+  githubLogin: string | null;
+  /** Fresh signal from the latest snapshot that gives a reason to reach out now. */
+  whyNow: { title: string; count: number } | null;
   githubUnconfirmed: boolean;
   lastError: string | null;
 }
@@ -50,9 +54,24 @@ export function toRow(c: LatestState): WatchlistRow {
     stale: !c.captured_at || Date.now() - Date.parse(c.captured_at) > STALE_MS,
     confidence: c.confidence?.level ?? null,
     hasOutreach: Boolean(c.outreach_line),
+    outreachLine: c.outreach_line,
+    githubLogin: c.github_org ?? c.detected_github_org,
+    whyNow: whyNow(c),
     githubUnconfirmed: !c.github_org && c.detected_github_org_method === "name_match_unconfirmed",
     lastError: c.last_error,
   };
+}
+
+const HOT_KINDS = new Set(["new_technology", "new_job_posting", "hiring_change", "new_release", "new_repository", "new_language"]);
+
+/** "New reason to reach out": meaningful changes in a snapshot captured in the last 7 days. */
+function whyNow(c: LatestState): WatchlistRow["whyNow"] {
+  if (!c.captured_at || Date.now() - Date.parse(c.captured_at) > STALE_MS) return null;
+  const hot = (c.changes ?? []).filter((x) => HOT_KINDS.has(x.kind));
+  if (!hot.length) return null;
+  const order = ["hiring_change", "new_job_posting", "new_release", "new_technology", "new_language", "new_repository"];
+  hot.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
+  return { title: hot[0].title, count: hot.length };
 }
 
 /** Next run of a "minute hour * * dow" UTC cron expression (dow optional). */

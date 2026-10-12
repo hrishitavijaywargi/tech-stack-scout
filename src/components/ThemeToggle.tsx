@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 
 /** Inline script (in <head>) that applies the saved theme, or the OS preference, before paint. */
-export const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("tss-theme");var d=t?t==="dark":window.matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.classList.toggle("dark",d)}catch(e){}})();`;
+export const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("tss-theme");var d=t?t==="dark":true;document.documentElement.classList.toggle("dark",d)}catch(e){}})();`;
 
 export function ThemeToggle() {
   const [dark, setDark] = useState<boolean | null>(null);

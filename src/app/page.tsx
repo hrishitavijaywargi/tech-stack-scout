@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Building2, CalendarClock, CheckCircle2, Clock, Gauge, Target } from "lucide-react";
+import { Building2, CalendarClock, Clock, Flame, Gauge, Target } from "lucide-react";
 import { AddCompaniesButton } from "@/components/AddCompaniesDialog";
 import { LiveProgress } from "@/components/LiveProgress";
 import { ExportButton, ResearchScopeButton } from "@/components/ResearchActions";
@@ -15,14 +15,14 @@ const RUN_TONE: Record<string, Tone> = { succeeded: "green", partial: "amber", f
 
 function Stat({ label, value, hint, icon }: { label: string; value: string | number; hint?: string; icon: React.ReactNode }) {
   return (
-    <Card className="p-4">
-      <div className="flex items-center justify-between text-slate-500">
-        <span className="text-xs font-medium uppercase tracking-wide">{label}</span>
-        {icon}
+    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-surface px-4 py-3">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700">{icon}</span>
+      <div className="min-w-0">
+        <p className="text-xl font-semibold leading-tight tabular-nums text-slate-900">{value}</p>
+        <p className="text-xs font-medium text-slate-600">{label}</p>
+        {hint && <p className="text-[11px] text-slate-400">{hint}</p>}
       </div>
-      <p className="mt-1.5 text-2xl font-semibold tabular-nums text-slate-900">{value}</p>
-      {hint && <p className="mt-0.5 text-xs text-slate-500">{hint}</p>}
-    </Card>
+    </div>
   );
 }
 
@@ -31,14 +31,15 @@ export default async function WatchlistPage() {
   if (res.error !== null) {
     return (
       <>
-        <PageHeader title="Watchlist" />
+        <PageHeader title="Accounts" />
         <SetupNotice error={res.error} />
       </>
     );
   }
   const { rows, lastRun, nextWeekly, nextDaily } = res.data;
-  const researched = rows.filter((r) => r.lastRefreshed);
   const stale = rows.filter((r) => r.stale).length;
+  const hot = rows.filter((r) => r.whyNow).length;
+  const strongFit = rows.filter((r) => (r.fitScore ?? 0) >= 80).length;
   const avg = (xs: (number | null)[]) => {
     const v = xs.filter((x): x is number => x !== null);
     return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null;
@@ -47,8 +48,8 @@ export default async function WatchlistPage() {
   return (
     <>
       <PageHeader
-        title="Watchlist"
-        description="Pre-call engineering context for every target account — refreshed automatically each week."
+        title="Accounts"
+        description="Walk into every call knowing how the account builds software — refreshed automatically each week."
         actions={
           <>
             {rows.length > 0 && <ExportButton />}
@@ -57,32 +58,6 @@ export default async function WatchlistPage() {
           </>
         }
       />
-
-      <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-slate-200 bg-surface px-4 py-2.5 text-xs text-slate-600">
-        <span className="flex items-center gap-1.5">
-          <Clock className="h-3.5 w-3.5" aria-hidden />
-          Last refresh run:{" "}
-          {lastRun ? (
-            <>
-              <Badge tone={RUN_TONE[lastRun.status] ?? "slate"}>{lastRun.status}</Badge>
-              <span title={formatDate(lastRun.started_at, true)}>
-                {relativeTime(lastRun.started_at)} · {lastRun.trigger}
-                {lastRun.source ? ` (${lastRun.source})` : ""} · {lastRun.companies_processed} processed
-                {lastRun.errors.length ? `, ${lastRun.errors.length} errors` : ""}
-              </span>
-            </>
-          ) : (
-            "none yet"
-          )}
-        </span>
-        <span className="flex items-center gap-1.5" title={`Weekly ${formatDate(nextWeekly, true)} · stale check ${formatDate(nextDaily, true)} · new companies are picked up within 10 minutes`}>
-          <CalendarClock className="h-3.5 w-3.5" aria-hidden />
-          Next scheduled: weekly refresh {relativeTime(nextWeekly)} (Mon 06:00 UTC) · stale check {relativeTime(nextDaily)}
-        </span>
-        <Link href="/activity" className="ml-auto font-medium text-indigo-700 hover:underline">
-          Research activity →
-        </Link>
-      </div>
 
       <LiveProgress />
 
@@ -98,16 +73,41 @@ export default async function WatchlistPage() {
       ) : (
         <>
           <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="Accounts" value={rows.length} hint={`${researched.length} with a current brief`} icon={<Building2 className="h-4 w-4" />} />
-            <Stat label="Avg. fit" value={avg(rows.map((r) => r.fitScore)) ?? "—"} hint="product fit score, 0–100" icon={<Target className="h-4 w-4" />} />
-            <Stat label="Avg. activity" value={avg(rows.map((r) => r.activityScore)) ?? "—"} hint="engineering momentum, 0–100" icon={<Gauge className="h-4 w-4" />} />
-            <Stat label="Fresh" value={`${rows.length - stale}/${rows.length}`} hint={stale ? `${stale} older than 7 days` : "all refreshed this week"} icon={<CheckCircle2 className="h-4 w-4" />} />
+            <Stat label="Accounts" value={rows.length} hint={`${rows.length - stale} fresh`} icon={<Building2 className="h-4 w-4" />} />
+            <Stat label="Reasons to reach out" value={hot} hint="new this week" icon={<Flame className="h-4 w-4" />} />
+            <Stat label="Strong fit" value={strongFit} hint={`avg fit ${avg(rows.map((r) => r.fitScore)) ?? "—"}`} icon={<Target className="h-4 w-4" />} />
+            <Stat label="Avg activity" value={avg(rows.map((r) => r.activityScore)) ?? "—"} hint="0–100" icon={<Gauge className="h-4 w-4" />} />
           </div>
-          <Card>
-            <WatchlistTable rows={rows} />
-          </Card>
-          <div className="mt-3 flex justify-end">
-            <ResearchScopeButton scope="all" label="Research all now" icon="play" />
+
+          <WatchlistTable rows={rows} />
+
+          <div className="mt-8 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-surface px-4 py-3 text-xs text-slate-600 lg:flex-row lg:items-center">
+            <span className="flex flex-wrap items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5" aria-hidden />
+              Last refresh run:{" "}
+              {lastRun ? (
+                <>
+                  <Badge tone={RUN_TONE[lastRun.status] ?? "slate"}>{lastRun.status}</Badge>
+                  <span title={formatDate(lastRun.started_at, true)}>
+                    {relativeTime(lastRun.started_at)} · {lastRun.trigger}
+                    {lastRun.source ? ` (${lastRun.source})` : ""} · {lastRun.companies_processed} processed
+                    {lastRun.errors.length ? `, ${lastRun.errors.length} errors` : ""}
+                  </span>
+                </>
+              ) : (
+                "none yet"
+              )}
+            </span>
+            <span className="flex items-center gap-1.5" title={`Weekly ${formatDate(nextWeekly, true)} · stale check ${formatDate(nextDaily, true)}`}>
+              <CalendarClock className="h-3.5 w-3.5" aria-hidden />
+              Next weekly refresh {relativeTime(nextWeekly)} (Mon 06:00 UTC) · stale check {relativeTime(nextDaily)}
+            </span>
+            <div className="flex items-center gap-3 lg:ml-auto">
+              <ResearchScopeButton scope="all" label="Research all now" icon="play" />
+              <Link href="/activity" className="font-medium text-indigo-700 hover:underline">
+                Activity →
+              </Link>
+            </div>
           </div>
         </>
       )}
